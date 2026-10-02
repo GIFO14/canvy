@@ -68,14 +68,14 @@ try {
   await host.close(); host = null;
   const diagnostics = await call('canvas_diagnostics');
   assert.equal(diagnostics.tools.length, CORE_TOOLS.size);
-  assert.equal(diagnostics.registered_public_tools, 157);
+  assert.equal(diagnostics.registered_public_tools, 161);
   const bootstrap = await call('_canvas_bootstrap', { document_id: document.id });
   assert.equal(bootstrap.document.id, document.id);
   await call('_canvas_disconnect', { session: bootstrap.session });
   assert.equal((await call('open_canvas', { document_id: document.id })).opening_requested, true);
   const created = (await call('create_canvas', { name: 'Created once after recovery' })).document;
   assert.equal((await call('list_documents')).documents.filter(d => d.id === created.id).length, 1);
-  await writeFile('artifacts/stdio-recovery-test.json', JSON.stringify({ status: 'PASS', host: 'REAL STDIO AND OPAQUE UI HARNESS, NOT CODEX DESKTOP', storage, toolProfile: 'core', advertisedPublicTools: CORE_TOOLS.size, advertisedTools: tools.length, registeredPublicTools: 157, checks: ['Core catalog includes all 33 aliases and open/list/get_node', 'Native opening metadata preserved', 'Same stdio connector recovers a stopped backend automatically', 'Mounted UI reattaches without reopening after backend restart', 'Native navigation works after backend restart', 'Saved text and stable node IDs survive recovery', 'Cached credentials renew after restart', 'Persistent document IDs survive recovery', 'Native app-only bootstrap and disconnect work after recovery', 'Opening acknowledgement and single creation work after recovery', 'No eval'] }, null, 2));
+  await writeFile('artifacts/stdio-recovery-test.json', JSON.stringify({ status: 'PASS', host: 'REAL STDIO AND OPAQUE UI HARNESS, NOT CODEX DESKTOP', storage, toolProfile: 'core', advertisedPublicTools: CORE_TOOLS.size, advertisedTools: tools.length, registeredPublicTools: 161, checks: ['Core catalog includes all 33 aliases and open/list/get_node', 'Native opening metadata preserved', 'Same stdio connector recovers a stopped backend automatically', 'Mounted UI reattaches without reopening after backend restart', 'Native navigation works after backend restart', 'Saved text and stable node IDs survive recovery', 'Cached credentials renew after restart', 'Persistent document IDs survive recovery', 'Native app-only bootstrap and disconnect work after recovery', 'Opening acknowledgement and single creation work after recovery', 'No eval'] }, null, 2));
   console.log('PASS compact catalog and automatic backend recovery through the same stdio connector');
 } finally {
   await host?.close();

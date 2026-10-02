@@ -2,6 +2,7 @@
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { localeSetting, toolCursor, useCanvas, useCanvasInput, useTextEdit } from '@open-pencil/vue';
 import { editor, status, scheduleSave, setViewportSize } from './editor.js';
+import { preview } from './prototype-preview.js';
 // Keep built-in editor messages in English without changing stored preferences.
 localeSetting.set('en');
 const emit = defineEmits(['ready']);
@@ -16,7 +17,7 @@ editor.reorderInAutoLayout = (id, parentId, index) => { if (!isBoardFrame(id)) o
 const surface = useCanvas(canvas, editor, { preserveDrawingBuffer: true, showRulers: false, onViewportResize: (width, height) => setViewportSize({ width, height }), onReady: () => {
   status.ready = true; editor.zoomToFit(); editor.requestRender(); emit('ready');
 } });
-const enabled = () => status.ready && !status.home && !status.switching;
+const enabled = () => status.ready && !status.home && !status.switching && !preview.current;
 const input = useCanvasInput(canvas, editor, surface.hitTestSectionTitle, surface.hitTestComponentLabel, surface.hitTestFrameTitle, undefined, undefined, enabled);
 const spacePan = ref(false);
 let previousTool;
@@ -45,7 +46,7 @@ function visibilityChanged() { if (document.visibilityState === 'hidden') releas
 const cursor = computed(() => editor.state.activeTool === 'HAND'
   ? input.drag.value?.type === 'pan' ? 'grabbing' : 'grab'
   : input.cursorOverride.value ?? toolCursor(editor.state.activeTool));
-watch(() => [status.home, status.switching, status.document?.id], releaseSpace);
+watch(() => [status.home, status.switching, status.document?.id, preview.current], releaseSpace);
 onMounted(() => {
   window.addEventListener('keydown', keydown, true);
   window.addEventListener('keyup', keyup, true);

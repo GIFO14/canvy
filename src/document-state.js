@@ -1,7 +1,7 @@
 import { SceneGraph, generateId } from '@open-pencil/scene-graph';
 // Use the same public graph fields that OpenPencil transfers between workers.
 // .fig import creates fresh IDs, so our local checkpoint also retains exact IDs.
-const fields = ['rootId', 'nodes', 'images', 'variables', 'variableCollections', 'activeMode', 'instanceIndex', 'figKiwiVersion', 'figSchemaDeflated', 'documentColorSpace', 'enabledLibraries'];
+const fields = ['rootId', 'nodes', 'images', 'variables', 'variableCollections', 'activeMode', 'instanceIndex', 'figKiwiVersion', 'figSchemaDeflated', 'documentColorSpace', 'enabledLibraries', 'canvyResources'];
 export function encodeDocument(graph) {
   return JSON.stringify({ version: 1, graph: Object.fromEntries(fields.map((key) => [key, graph[key]])) }, (_, value) => {
     if (value instanceof Map) return { $freecanvas: 'Map', value: [...value] };

@@ -8,6 +8,8 @@ import { selectionToJSX } from '@open-pencil/core/io/formats/jsx';
 import { fontManager } from '@open-pencil/core/text';
 import { encodeDocument, decodeDocument } from './document-state.js';
 import { reactive } from 'vue';
+import { importFrontend, restoreImportFonts } from './frontend-import.js';
+import { openPreview, closePreview, previewAction } from './prototype-preview.js';
 
 let viewport = { width: 800, height: 600 };
 export function setViewportSize(size) { viewport = size; }
@@ -29,7 +31,9 @@ let lastSaveError = '';
 let lastSavedState, lastSaveResult, retryTimer, saveScheduled = false;
 export const status = reactive({ ready: false, connected: false, savedAt: null, revision: 0, saving: false, dirty: false, saveError: '', openError: '', document: null, documents: [], home: false, switching: false });
 function loadDocument(bootstrap) {
+  closePreview();
   editor.replaceGraph(bootstrap.state ? decodeDocument(bootstrap.state) : new SceneGraph());
+  restoreImportFonts(editor.graph);
   editor.undo.clear();
   status.document = bootstrap.document;
   status.documents = bootstrap.documents ?? status.documents;
@@ -181,10 +185,12 @@ function makeFigma(pageId) {
 }
 function snapshot() {
   const checkpoint = captureGraphCheckpoint(editor.graph);
+  const resources = structuredClone(editor.graph.canvyResources);
   const pageId = editor.state.currentPageId;
   const selection = new Set(editor.state.selectedIds);
   return () => {
     checkpoint.restore();
+    editor.graph.canvyResources = structuredClone(resources);
     if (editor.graph.getNode(pageId)) editor.switchPage(pageId);
     editor.select([...selection].filter((id) => editor.graph.getNode(id)));
     editor.requestRender(); scheduleSave();
@@ -205,6 +211,28 @@ export async function runRPC({ command, args = {} }) {
   if (command === 'freecanvas_status') return { ...status, ...contextPacket(), saveError: lastSaveError, nodes: editor.graph.nodes.size };
   if (command === 'freecanvas_context') return contextPacket();
   if (command === 'freecanvas_save') return saveDocument();
+  if (command === 'canvy_get_import_report') {
+    const imports = editor.graph.canvyResources?.imports ?? {};
+    const entry = imports[args.import_id];
+    if (!entry) throw new Error('Unknown frontend import');
+    const { html, originals, ...report } = entry;
+    return { import_id: args.import_id, ...report, original_svgs: originals.length, original_fonts: Object.values(editor.graph.canvyResources.fonts).map(({data, ...font}) => font) };
+  }
+  if (command === 'canvy_preview_import') { const result = openPreview(editor.graph, args); return { ...result, opening_requested: true }; }
+  if (command === 'canvy_preview_action') return previewAction(args);
+  if (command === 'canvy_import_frontend') {
+    const before = snapshot();
+    let result;
+    try {
+      result = await importFrontend(editor, makeFigma(), args.packet, args);
+      await ensureFonts();
+      const after = snapshot();
+      editor.pushUndoEntry({ label: 'Import React frontend', inverse: before, forward: after });
+    } catch (error) { before(); throw error; }
+    status.revision++; await saveDocument();
+    if (args.preview) openPreview(editor.graph, { import_id: result.import_id });
+    return result;
+  }
   if (command === 'freecanvas_undo' || command === 'freecanvas_redo') {
     command.endsWith('undo') ? editor.undoAction() : editor.redoAction();
     status.revision++; await saveDocument(); return contextPacket();

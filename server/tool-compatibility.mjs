@@ -12,6 +12,7 @@ export const COMPATIBILITY_TOOLS = new Set([
 ]);
 
 export const CORE_TOOLS = new Set([
+  'canvas_import_react', 'canvas_get_import_report', 'canvas_preview_import', 'canvas_preview_action',
   'open_canvas', 'list_documents', 'create_canvas', 'rename_canvas',
   'canvas_status', 'canvas_diagnostics', 'list_open_canvases', 'switch_canvas', 'get_node', 'get_selection',
   'get_page_tree', 'get_current_page', 'list_pages', 'get_font_status',

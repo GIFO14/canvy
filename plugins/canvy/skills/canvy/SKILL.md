@@ -5,7 +5,7 @@ description: Create, inspect and edit persistent local OpenPencil designs in Can
 
 # Canvy
 
-Canvy is built for Codex and uses a native MCP App resource. Its interface is English; preserve user-authored names and design content. It edits design documents and exports code, but does not execute arbitrary React prototypes. Read the checkout's README for installation and adaptation to other harnesses.
+Canvy is built for Codex and uses a native MCP App resource. Its interface is English; preserve user-authored names and design content. It edits design documents, imports browser-rendered React screens and previews their original bundled code in an isolated native-panel frame. Read the checkout's README for installation and adaptation to other harnesses.
 
 ## Establish a live target
 
@@ -19,13 +19,21 @@ Explicit navigation pins the connector's working panel. Later explicitly targete
 
 ## Design and verify
 
-The `core` profile advertises 63 public tools and five app-only bridge tools, including all 33 `canvas_` aliases, basic reads, creation, navigation and exports. `CANVY_TOOL_PROFILE=full` advertises all 157 public handlers. Discovery is not a permissions boundary. Diagnostics report the catalog, connector/backend versions and live panels.
+The `core` profile advertises 67 public tools and five app-only bridge tools, including all 33 `canvas_` aliases, basic reads, creation, navigation and exports. `CANVY_TOOL_PROFILE=full` advertises all 161 public handlers. Discovery is not a permissions boundary. Diagnostics report the catalog, connector/backend versions and live panels.
 
 Prefer `canvas_render`, `canvas_update_node`, `canvas_set_text`, `canvas_set_fill`, `canvas_set_font`, `canvas_select_nodes`, `canvas_viewport_zoom_to_fit` and `canvas_undo`; they share validated handlers with canonical tools. If discovery omits tools, compare actual callable tools with diagnostics and refresh the plugin session. Do not enable eval or invent an arbitrary command gateway.
 
 Create native frames, text, groups, vectors, layouts and components. Design JSX accepted by `canvas_render` is not arbitrary React source. Read each discovered schema. Inspect nodes, page trees, selection and font status. Group related controls so humans can move them together, and keep labels/icons editable. Overlapping top-level mockups remain separate screens.
 
 Inter and Roboto are bundled in Regular, Medium, SemiBold, Bold and ExtraBold. Check `get_font_status` before asserting font fidelity. Export and inspect a preview before claiming visual fidelity. Exports stay within the checkout's `exports` directory; SVG and design JSX are supported.
+
+## Import and preview React
+
+Use `canvas_import_react` for actual React/CSS, not `canvas_render`. Supply a default-exported component through inline `source`/`files` or local `project_dir`/`entry`, CSS, serializable props and up to four viewport sizes. The tool runs local Chromium, imports initial computed geometry into editable native nodes and preserves original assets plus a separate interactive bundle. It requires current native Canvy and Chromium; run `npx playwright install chromium` or configure an installed browser channel. For existing applications, write a small wrapper with providers and local example data; network APIs and external resources are blocked. Do not assume support for framework/server-component builds, aliases or custom loaders.
+
+`tailwind: true` uses bundled v4 utilities; provide precompiled CSS for other configurations. Preserve supplied SVGs, images and fonts rather than substituting your own. Read `canvas_get_import_report` using the returned `import_id`; report missing assets, unsupported CSS and font registration failures. Geometry/style capture is not proof of visual fidelity: compare a native export with the rendered source. Imported variants are fixed editable snapshots; responsive behavior remains in the original prototype.
+
+`canvas_preview_import` opens an import/frame in the same native panel. `canvas_preview_action` supports typed click/fill/snapshot/close operations using selectors. No eval gateway. The opaque prototype cannot access editor state, MCP, credentials or network; do not grant it those capabilities. Native edits do not update React source; transient interaction state is not persisted. Original code, resources, reports and IDs survive document reload in `.freecanvas`; `.fig` backups exclude prototype code and font files. Do not replay an uncertain import or preview action after timeout.
 
 ## Persistence and recovery
 

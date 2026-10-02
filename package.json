@@ -1,13 +1,13 @@
 {
   "name": "canvy",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 4317",
     "build": "vite build && vite build --config vite.native.config.js && node scripts/build-host.mjs",
     "start": "node server/index.mjs",
-    "test": "npm run test:compatibility && npm run test:multicanvas && npm run test:navigation && npm run test:recovery && npm run test:space-pan",
+    "test": "npm run test:compatibility && npm run test:multicanvas && npm run test:navigation && npm run test:recovery && npm run test:space-pan && npm run test:frontend",
     "test:installed": "node tests/installed.mjs && node scripts/diagnose-plugin.mjs",
     "test:multicanvas": "node tests/multicanvas.mjs",
     "test:compatibility": "node tests/compatibility.mjs",
@@ -15,7 +15,8 @@
     "test:navigation": "node tests/navigation.mjs",
     "test:space-pan": "node tests/space-pan.mjs",
     "configure": "node scripts/configure-plugin.mjs",
-    "install:codex": "npm run build && node scripts/install-codex.mjs"
+    "install:codex": "npm run build && node scripts/install-codex.mjs",
+    "test:frontend": "node tests/frontend.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.17",
@@ -25,17 +26,23 @@
     "@open-pencil/mcp": "0.15.1",
     "@open-pencil/vue": "0.15.1",
     "@phosphor-icons/vue": "^2.2.1",
+    "@tailwindcss/postcss": "4.3.3",
     "hono": "^4.13.2",
+    "playwright": "1.62.1",
+    "postcss": "8.5.28",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tailwindcss": "4.3.3",
     "valibot": "^1.4.2",
     "vue": "^3.5.41",
-    "ws": "^8.21.3"
+    "ws": "^8.21.3",
+    "esbuild": "^0.28.2"
   },
   "devDependencies": {
     "@modelcontextprotocol/ext-apps": "^1.7.5",
     "@openai/mcp-extensions": "^0.1.0",
     "@playwright/test": "^1.62.1",
     "@vitejs/plugin-vue": "^6.0.8",
-    "esbuild": "^0.28.2",
     "vite": "8.1.4",
     "vite-plugin-singlefile": "^2.3.3"
   },

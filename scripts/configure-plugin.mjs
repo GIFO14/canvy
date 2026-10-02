@@ -17,7 +17,8 @@ export async function configurePlugin() {
       env: {
         CANVY_PORT: process.env.CANVY_PORT ?? process.env.FREECANVAS_PORT ?? '4318',
         CANVY_DATA_DIR: resolve(process.env.CANVY_DATA_DIR ?? process.env.FREECANVAS_DATA_DIR ?? resolve(root, '.runtime')).replaceAll('\\', '/'),
-        CANVY_TOOL_PROFILE: process.env.CANVY_TOOL_PROFILE ?? process.env.FREECANVAS_TOOL_PROFILE ?? 'core'
+        CANVY_TOOL_PROFILE: process.env.CANVY_TOOL_PROFILE ?? process.env.FREECANVAS_TOOL_PROFILE ?? 'core',
+        ...(process.env.CANVY_BROWSER_CHANNEL ? { CANVY_BROWSER_CHANNEL: process.env.CANVY_BROWSER_CHANNEL } : {})
       }
     }
   } };

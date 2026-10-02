@@ -3,11 +3,14 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { PhCursor, PhHand, PhCornersOut, PhChatCircle, PhArrowCounterClockwise, PhHouse, PhPlus, PhPencilSimple, PhSquaresFour } from '@phosphor-icons/vue';
 import { editor, status, initialize, connectBridge, contextPacket, saveDocument, scheduleSave, switchDocument, createDocument, refreshDocuments, renameDocument } from './editor.js';
 import Canvas from './Canvas.vue';
+import PrototypePreview from './PrototypePreview.vue';
+import { preview, openPreview } from './prototype-preview.js';
 const booted = ref(false), connected = ref(false), ready = ref(false), version = ref(0);
 const error = ref(''), notice = ref(''), hostConnected = ref(false), sending = ref(false);
 const activeTool = computed(() => editor.state.activeTool);
 const newName = ref(''), creating = ref(false), renameId = ref(null), renameName = ref('');
 const selected = computed(() => { version.value; return editor.state.selectedIds.size > 0; });
+const importedSelection = computed(() => { version.value; return Object.values(editor.graph.canvyResources?.imports ?? {}).flatMap(i => i.frames).find(f => editor.state.selectedIds.has(f.id)); });
 const zoom = computed(() => { version.value; return Math.round(editor.state.zoom * 100); });
 const saveLabel = computed(() => status.saveError ? 'Could not save. Retrying…' : status.saving || status.dirty ? 'Saving…' : status.savedAt ? 'Saved locally' : 'Autosave');
 let disconnect, noticeTimer;
@@ -34,6 +37,7 @@ async function sendContext() {
   finally { sending.value = false; }
 }
 function keydown(e) {
+  if (preview.current) return;
   if (status.home || status.switching) return;
   if (e.target.closest('input,textarea,[contenteditable]')) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
@@ -66,7 +70,8 @@ onUnmounted(() => { disconnect?.(); stops.forEach((stop) => stop()); clearTimeou
 </script>
 <template>
   <main class="canvas-shell" aria-label="Canvy" :data-connected="connected" :data-ready="ready" :data-save-error="Boolean(status.saveError)" :data-saved="Boolean(status.savedAt) && !status.dirty && !status.saving">
-    <Canvas v-if="booted" :inert="status.home || status.switching" @ready="ready = true" />
+    <Canvas v-if="booted" :inert="status.home || status.switching || Boolean(preview.current)" @ready="ready = true" />
+    <PrototypePreview v-if="preview.current" :key="preview.current.import_id + ':' + preview.current.width" />
     <div v-if="!ready" class="loading" role="status">Preparing canvas…</div>
     <section v-if="booted && status.home" class="canvas-home" aria-label="Canvy Home">
       <div class="home-content">
@@ -100,6 +105,7 @@ onUnmounted(() => { disconnect?.(); stops.forEach((stop) => stop()); clearTimeou
       <span class="tool-divider" />
       <button @click="editor.zoomToFit()" aria-label="Fit canvas" title="Fit mockups"><PhCornersOut :size="19" /></button>
       <button @click="editor.undoAction()" aria-label="Undo" title="Undo (Ctrl Z)"><PhArrowCounterClockwise :size="19" /></button>
+      <button v-if="importedSelection" @click="openPreview(editor.graph, { frame_id: importedSelection.id })" aria-label="Preview React prototype" title="Preview original React prototype">▶</button>
     </nav>
     <button v-if="!status.home" class="zoom-control" @click="editor.zoomToFit()" aria-label="Fit canvas and show zoom"><span class="connection-dot" :class="{ connected, saving: status.saving || status.dirty, failed: status.saveError }" :title="saveLabel" /><span>{{ zoom }}%</span></button>
     <button v-if="!status.home && hostConnected && selected" class="selection-action" @click="sendContext" :disabled="sending" aria-label="Send selection to Codex"><PhChatCircle :size="17" />{{ sending ? 'Sending…' : 'Send to Codex' }}</button>

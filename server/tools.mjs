@@ -8,9 +8,10 @@ import { OpenAIUiToolMetadataSchema, OpenAIUiResourceMetadataSchema } from '@ope
 import { addCompatibilityTools } from './tool-compatibility.mjs';
 import { createServiceClient } from './service-client.mjs';
 import { createPanelNavigator } from './panel-navigation.mjs';
+import { captureFrontend } from './frontend-import.mjs';
 
 export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
-  const server = new McpServer({ name: 'canvy', version: '0.4.1' });
+  const server = new McpServer({ name: 'canvy', version: '0.5.0' });
   const catalog = addCompatibilityTools(server);
   registerTools(server, { policy: { allowEval: false, disabledTools: ['open_file', 'save_file', 'new_document', 'list_documents'] }, mcpRoot: root, sendRPC: routedRPC });
   const register = (name, description, entries, handler, meta = {}, readOnly = false) => server.registerTool(name, {
@@ -24,21 +25,22 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
       return { isError: true, content: [{ type: 'text', text: error.message }] };
     }
   });
-  const uri = 'ui://canvy/canvas/v1';
+  const uri = 'ui://canvy/canvas/v2';
   const openMetadata = OpenAIUiToolMetadataSchema.parse({ entrypoints: [{ type: 'thread' }, { type: 'global' }], preferredModelDisplayMode: 'fullscreen' });
   const resourceMetadata = OpenAIUiResourceMetadataSchema.parse({ preferredDisplayMode: 'fullscreen', availableDisplayModes: ['fullscreen', 'pip'] });
   function registerCanvasResource(resourceUri, name) {
   server.registerResource(name, resourceUri, {
     mimeType: 'text/html;profile=mcp-app',
-    _meta: { 'openai/ui': resourceMetadata, ui: { csp: { frameDomains: [], connectDomains: [], resourceDomains: ['blob:'] } } }
+    _meta: { 'openai/ui': resourceMetadata, ui: { csp: { frameDomains: ['blob:'], connectDomains: [], resourceDomains: ['blob:'] } } }
   }, async () => {
     const html = await readFile(fileURLToPath(new URL('../dist/mcp-app.html', import.meta.url)), 'utf8');
     return { contents: [{ uri: resourceUri, mimeType: 'text/html;profile=mcp-app', text: html,
-    _meta: { 'openai/ui': resourceMetadata, ui: { csp: { frameDomains: [], connectDomains: [], resourceDomains: ['blob:'] } } }
+    _meta: { 'openai/ui': resourceMetadata, ui: { csp: { frameDomains: ['blob:'], connectDomains: [], resourceDomains: ['blob:'] } } }
   }] };
   });
   }
   registerCanvasResource(uri, 'canvy-canvas');
+  registerCanvasResource('ui://canvy/canvas/v1', 'canvy-canvas-v1');
   registerCanvasResource('ui://freecanvas/canvas/v11', 'freecanvas-canvas-v11');
   registerCanvasResource('ui://freecanvas/canvas/v10', 'freecanvas-canvas-v10');
   registerCanvasResource('ui://freecanvas/canvas/v9', 'freecanvas-canvas-v9');
@@ -50,6 +52,27 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
     async (args) => { if (args.document_id) { const list = await library('list'); if (!list.documents.some(d => d.id === args.document_id)) throw new Error('Unknown canvas'); } return { document_id: args.document_id ?? null, local: true, presentation: 'native-plugin-canvas', opening_requested: true, connection: await diagnostics(args) }; },
     { ui: { resourceUri: uri }, 'openai/outputTemplate': uri, 'openai/ui': openMetadata }, true);
   const target = { document_id: v.optional(v.string()) };
+  const dimension = v.pipe(v.number(), v.integer(), v.minValue(240), v.maxValue(3840));
+  const bounded = (limit) => v.pipe(v.string(), v.maxLength(limit));
+  register('canvas_import_react', 'Render a default-exported React component with its real CSS/Tailwind in local Chromium, capture computed geometry, and import editable native nodes. Original fonts, images, SVGs, prototype and issue report persist with the canvas. Supply inline source/files or a local project_dir and entry. Local imports only; network/API access is blocked. Tailwind=true compiles v4 utility candidates; supply compiled CSS for other configurations. Unsupported CSS is explicitly reported. Requires the current native Canvy panel and Chromium. Editing waits for autosave; do not replay an uncertain import.', {
+    ...target, name: v.optional(bounded(120)), source: v.optional(bounded(1024 * 1024)), css: v.optional(bounded(1024 * 1024)),
+    project_dir: v.optional(v.string()), entry: v.optional(v.string()), selector: v.optional(bounded(500)), tailwind: v.optional(v.boolean()), props: v.optional(v.record(v.string(), v.unknown())),
+    files: v.optional(v.pipe(v.array(v.object({ path: v.string(), content: bounded(3 * 1024 * 1024), encoding: v.optional(v.picklist(['utf8', 'base64'])) })), v.maxLength(100))),
+    viewports: v.optional(v.pipe(v.array(v.object({ width: dimension, height: dimension })), v.minLength(1), v.maxLength(4))),
+    x: v.optional(v.number()), y: v.optional(v.number()), preview: v.optional(v.boolean())
+  }, async args => {
+    // Check the actual target before compiling; an old mounted UI cannot handle
+    // import commands. This read also performs explicit document navigation.
+    const targetStatus = await routedRPC({ command: 'freecanvas_status', args: { document_id: args.document_id } });
+    const attached = (await panels('list')).panels.find(p => p.document_id === targetStatus.document_id);
+    const [major, minor] = (attached?.ui_version ?? '').split('.').map(Number);
+    if (!(major === 0 && minor >= 5)) throw new Error('React import requires Canvy 0.5.0 or newer. Reopen the updated native plugin panel; your saved canvases are preserved.');
+    const packet = await captureFrontend(args);
+    return routedRPC({ command: 'canvy_import_frontend', args: { document_id: targetStatus.document_id, packet, x: args.x, y: args.y, preview: args.preview } });
+  });
+  register('canvas_get_import_report', 'Read conversion issues, responsive frame IDs, original font registration and asset preservation for a saved frontend import. Does not return bundled prototype source.', { ...target, import_id: v.string() }, args => routedRPC({ command: 'canvy_get_import_report', args }), {}, true);
+  register('canvas_preview_import', 'Open the original bundled React prototype inside the native Canvy panel. This isolated, offline preview is separate from editable design nodes; native edits do not rewrite React source. Supply import_id or frame_id. Preview interaction state is temporary; its original code and assets persist.', { ...target, import_id: v.optional(v.string()), frame_id: v.optional(v.string()), width: v.optional(dimension), height: v.optional(dimension) }, args => routedRPC({ command: 'canvy_preview_import', args }));
+  register('canvas_preview_action', 'Interact with an open React prototype using a CSS selector: click or fill a form field; snapshot reads visible text and controls; close returns to the editable canvas. Typed actions only, no JavaScript evaluation. A timed-out action has an uncertain outcome and must not be replayed automatically.', { ...target, action: v.picklist(['click', 'fill', 'snapshot', 'close']), selector: v.optional(bounded(500)), value: v.optional(bounded(20000)) }, args => routedRPC({ command: 'canvy_preview_action', args }));
   register('save_document', 'Persist the canvas locally. Edits already autosave. Specify document_id when multiple canvases are open.', target, async (args) => routedRPC({ command: 'freecanvas_save', args }));
   register('undo', 'Undo the last edit in the specified canvas.', target, async (args) => routedRPC({ command: 'freecanvas_undo', args }));
   register('redo', 'Redo the last undone edit in the specified canvas.', target, async (args) => routedRPC({ command: 'freecanvas_redo', args }));
@@ -58,7 +81,7 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
     if (connection.connection_state !== 'document_connected') return { ...connection, connected: false, ready: false };
     return { ...await sendRPC({ command: 'freecanvas_status', args }), ...connection };
   }, {}, true);
-  register('canvas_diagnostics', 'Inspect native panel attachment, loaded documents, interface versions, runtime limits, and the advertised public tool catalog. Does not require an open canvas. Opening requested is distinct from a connected document.', target, async args => ({ ...await diagnostics(args), ...await panels('list'), connector_version: '0.4.1', tool_profile: catalog.profile, registered_public_tools: catalog.filter(t => t.public).length, tools: catalog.filter(t => t.public && t.advertised) }), {}, true);
+  register('canvas_diagnostics', 'Inspect native panel attachment, loaded documents, interface versions, runtime limits, and the advertised public tool catalog. Does not require an open canvas. Opening requested is distinct from a connected document.', target, async args => ({ ...await diagnostics(args), ...await panels('list'), connector_version: '0.5.0', tool_profile: catalog.profile, registered_public_tools: catalog.filter(t => t.public).length, tools: catalog.filter(t => t.public && t.advertised) }), {}, true);
   register('export_jsx', 'Export a frame or selection to JSX with Tailwind classes. This is a design export, not a running React app.', { ...target, ids: v.array(v.string()) }, async (args) => routedRPC({ command: 'freecanvas_jsx', args }), {}, true);
   register('send_selection_to_chat', 'Read the selected nodes and a bounded context packet for a targeted change request.', target, async (args) => routedRPC({ command: 'freecanvas_context', args }), {}, true);
   const serviceRequest = createServiceClient(origin, { ensureService });
@@ -98,11 +121,11 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
     if (response.status === 404) {
       try {
         const live = await sendRPC({ command: 'freecanvas_status', args });
-        return { version: '0.4.1', service_compatibility: '0.3.0', connection_state: 'document_connected', document_id: live.document_id, open_documents: [live.document_id], requested_document_connected: true, guidance: null, live_status: live };
+        return { version: '0.5.0', service_compatibility: '0.3.0', connection_state: 'document_connected', document_id: live.document_id, open_documents: [live.document_id], requested_document_connected: true, guidance: null, live_status: live };
       } catch (error) {
         const ambiguous = /Multiple canvases/.test(error.message);
         const state = ambiguous ? 'multiple_documents_connected' : /disconnected/.test(error.message) ? 'panel_not_connected' : 'connection_error';
-        return { version: '0.4.1', service_compatibility: '0.3.0', connection_state: state, document_id: args.document_id ?? null, requested_document_connected: false, guidance: ambiguous ? 'Specify document_id.' : error.message };
+        return { version: '0.5.0', service_compatibility: '0.3.0', connection_state: state, document_id: args.document_id ?? null, requested_document_connected: false, guidance: ambiguous ? 'Specify document_id.' : error.message };
       }
     }
     const result = await response.json(); if (!response.ok) throw new Error(result.error ?? 'Connection diagnostics unavailable'); return result;
