@@ -15,7 +15,23 @@ const originalReorder = editor.reorderInAutoLayout;
 const isBoardFrame = (id) => { const node = editor.graph.getNode(id); return node?.type === 'FRAME' && node.parentId === editor.state.currentPageId; };
 editor.reparentNodes = (ids, parentId) => { const movable = ids.filter((id) => !isBoardFrame(id)); if (movable.length) originalReparent(movable, parentId); };
 editor.reorderInAutoLayout = (id, parentId, index) => { if (!isBoardFrame(id)) originalReorder(id, parentId, index); };
-const surface = useCanvas(canvas, editor, { preserveDrawingBuffer: true, showRulers: false, onViewportResize: (width, height) => setViewportSize({ width, height }), onReady: () => {
+let settleTimer;
+const surface = useCanvas(canvas, editor, { preserveDrawingBuffer: true, showRulers: false,
+  getRenderState: () => {
+    if (editor.renderer) editor.renderer.canvyRetainedFullScene = interaction.mode === 'interact' && !status.home && !status.switching && !preview.current;
+    return editor.state;
+  },
+  onPresented: () => {
+    clearTimeout(settleTimer);
+    const renderer = editor.renderer;
+    if (canvas.value) canvas.value.dataset.sceneCache = String(Boolean(renderer?.canvyRetainedFullScene && renderer.sceneBacking));
+    // Finish a crisp cache after camera motion, never rebuild it on every input
+    // event. The upstream backing also invalidates edits, fonts and page changes.
+    if (renderer?.canvyRetainedFullScene && renderer.sceneBacking && !renderer.sceneBackingAllocationFailed && renderer.sceneBackingNeedsCrispRender && renderer.navigationPhase === 'idle') {
+      settleTimer = setTimeout(() => surface.render(), Math.max(16, renderer.sceneBackingPreviewUntil - performance.now()));
+    }
+  },
+  onViewportResize: (width, height) => setViewportSize({ width, height }), onReady: () => {
   status.ready = true; editor.zoomToFit(); editor.requestRender(); emit('ready');
 } });
 const available = () => status.ready && !status.home && !status.switching && !preview.current;
@@ -54,7 +70,13 @@ const cursor = computed(() => editor.state.activeTool === 'HAND'
   ? input.drag.value?.type === 'pan' ? 'grabbing' : 'grab'
   : input.cursorOverride.value ?? toolCursor(editor.state.activeTool));
 watch(() => [status.home, status.switching, status.document?.id, preview.current], releaseSpace);
-watch(() => interaction.mode, () => { releaseSpace(); input.cleanupInteractions(); });
+watch(() => interaction.mode, () => { releaseSpace(); input.cleanupInteractions(); surface.render(); });
+watch(() => editor.state.navigation?.phase, phase => { if (phase === 'idle') surface.render(); });
+watch(() => [status.home, status.document?.id], () => {
+  clearTimeout(settleTimer);
+  editor.renderer?.invalidateScenePicture();
+  surface.render();
+});
 function prototypePan(event) {
   if (!event.detail?.pressed) { releaseSpace(); return; }
   keydown({ code: 'Space', preventDefault() {}, stopImmediatePropagation() {} });
@@ -71,6 +93,7 @@ useTextEdit(canvas, editor, { isEnabled: () => interaction.mode === 'visual' });
 const stop = editor.onEditorEvent('history:changed', scheduleSave);
 onUnmounted(() => {
   releaseSpace();
+  clearTimeout(settleTimer);
   window.removeEventListener('keydown', keydown, true);
   window.removeEventListener('keyup', keyup, true);
   window.removeEventListener('blur', releaseSpace);

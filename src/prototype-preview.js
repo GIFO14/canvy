@@ -57,6 +57,21 @@ export function previewHtml(html, { inline = false } = {}) {
   for (const script of documentCopy.querySelectorAll('script')) script.setAttribute('nonce', nonce);
   return '<!doctype html>' + documentCopy.documentElement.outerHTML;
 }
+const inlineDocuments = new Map();
+export function acquireInlinePrototype(html) {
+  let entry = inlineDocuments.get(html);
+  if (!entry) {
+    entry = { url: URL.createObjectURL(new Blob([previewHtml(html, { inline: true })], { type: 'text/html' })), references: 0 };
+    inlineDocuments.set(html, entry);
+  }
+  entry.references++;
+  let released = false;
+  return { url: entry.url, release() {
+    if (released) return;
+    released = true;
+    if (--entry.references === 0) { URL.revokeObjectURL(entry.url); inlineDocuments.delete(html); }
+  } };
+}
 export function attachPreview(element) {
   frame = element;
   listener = event => {

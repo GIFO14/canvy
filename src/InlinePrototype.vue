@@ -1,10 +1,10 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { previewHtml } from './prototype-preview.js';
+import { acquireInlinePrototype } from './prototype-preview.js';
 const props = defineProps({ screen: Object, disabled: Boolean });
 const iframe = ref(null), ready = ref(false), error = ref('');
-const url = URL.createObjectURL(new Blob([previewHtml(props.screen.html, { inline: true })], { type: 'text/html' }));
-const style = computed(() => ({ width: props.screen.width + 'px', height: props.screen.height + 'px', transform: `translate(${props.screen.x}px, ${props.screen.y}px) scale(${props.screen.zoom})`, pointerEvents: props.disabled ? 'none' : 'auto' }));
+const documentResource = acquireInlinePrototype(props.screen.html), url = documentResource.url;
+const style = computed(() => ({ width: props.screen.width + 'px', height: props.screen.height + 'px', transform: `translate(${props.screen.x}px, ${props.screen.y}px)`, pointerEvents: props.disabled ? 'none' : 'auto' }));
 function message(event) {
   if (event.source !== iframe.value?.contentWindow || event.data?.channel !== 'canvy-prototype-v1') return;
   const data = event.data;
@@ -13,7 +13,7 @@ function message(event) {
   if (typeof data.panKey === 'boolean' && !error.value) window.dispatchEvent(new CustomEvent('canvy:prototype-pan', { detail: { pressed: data.panKey } }));
 }
 onMounted(() => window.addEventListener('message', message));
-onUnmounted(() => { window.removeEventListener('message', message); URL.revokeObjectURL(url); });
+onUnmounted(() => { window.removeEventListener('message', message); documentResource.release(); });
 </script>
 <template>
   <div class="inline-prototype" :style="style" :data-frame-id="screen.id" :data-ready="ready" :data-error="Boolean(error)">
@@ -22,7 +22,7 @@ onUnmounted(() => { window.removeEventListener('message', message); URL.revokeOb
   </div>
 </template>
 <style scoped>
-.inline-prototype{position:absolute;left:0;top:0;transform-origin:0 0;overflow:hidden;background:white}
+.inline-prototype{position:absolute;left:0;top:0;transform-origin:0 0;overflow:hidden;background:white;contain:layout style paint}
 iframe{display:block;width:100%;height:100%;border:0;background:white}
 .prototype-status{position:absolute;inset:0;display:grid;place-items:center;background:#ffffffeb;color:#555;padding:20px;text-align:center;font-size:14px}
 </style>

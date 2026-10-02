@@ -15,8 +15,9 @@ export function installPrototypeAssets() {
       resources.set(value, url); originals.set(url, value); return url;
     } catch { return value; }
   }
-  const cssValue = value => value.replace(/url\((['"]?)(data:.*?)\1\)/gs, (_, quote, data) => `url("${resource(data)}")`);
+  const cssValue = value => value.includes('data:') ? value.replace(/url\((['"]?)(data:.*?)\1\)/gs, (_, quote, data) => `url("${resource(data)}")`) : value;
   const rewriteStyle = style => {
+    if (!style.cssText.includes('data:')) return;
     for (const key of [...style]) { const value = style.getPropertyValue(key), next = cssValue(value); if (next !== value) style.setProperty(key, next, style.getPropertyPriority(key)); }
   };
   function rules(list) { for (const rule of list) { if (rule.style) rewriteStyle(rule.style); if (rule.cssRules) rules(rule.cssRules); } }
@@ -33,7 +34,9 @@ export function installPrototypeAssets() {
     for (const record of records) {
       if (record.type === 'attributes' && record.attributeName === 'style') rewriteStyle(record.target.style);
       for (const node of record.addedNodes) if (node.nodeType === 1) {
-        for (const element of [node, ...node.querySelectorAll('img,[style]')]) {
+        // React can append thousands of styled cells in one commit. Only
+        // embedded resources need rewriting; ordinary layout styles do not.
+        for (const element of [node, ...node.querySelectorAll('img[src^="data:"],[style*="data:"]')]) {
           if (element instanceof HTMLImageElement && element.src.startsWith('data:')) element.src = element.src;
           if (element.style) rewriteStyle(element.style);
         }

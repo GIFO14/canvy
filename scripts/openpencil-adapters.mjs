@@ -8,10 +8,16 @@ export function openPencilAdapters() {
       ['fill.imageScaleMode = p.imageScaleMode ?? "FILL";', 'fill.imageScaleMode = p.imageScaleMode === "STRETCH" ? "CROP" : p.imageScaleMode ?? "FILL";']
     ] : path.endsWith('/@open-pencil/core/dist/io/formats/svg/defs.js') ? [
       ['preserveAspectRatio: fill.imageScaleMode === "FIT" ? "xMidYMid meet" : "xMidYMid slice"', 'preserveAspectRatio: fill.imageScaleMode === "CROP" && fill.imageTransform?.m00 === 1 && fill.imageTransform?.m11 === 1 && !fill.imageTransform?.m02 && !fill.imageTransform?.m12 ? "none" : fill.imageScaleMode === "FIT" ? "xMidYMid meet" : "xMidYMid slice"']
+    ] : path.endsWith('/@open-pencil/core/dist/canvas/renderer/pipeline.js') ? [
+      // Reuse OpenPencil's retained scene backing in our single full surface,
+      // while keeping its labels/chrome pass. Opt in only for Interact; exports
+      // and visual editing keep the upstream path and invalidation policy.
+      ['updateSceneBackingPreviewState(r, layer);', 'updateSceneBackingPreviewState(r, r.canvyRetainedFullScene ? "scene" : layer);'],
+      ['if (!renderedScene && layer === "scene" && !requiresUncachedSceneRender)', 'if (!renderedScene && (layer === "scene" || r.canvyRetainedFullScene) && !requiresUncachedSceneRender)']
     ] : [];
     if (!replacements.length) return;
     for (const [before, after] of replacements) {
-      if (!code.includes(before)) throw new Error('OpenPencil paint codec changed; review the compatibility adapter');
+      if (!code.includes(before)) throw new Error(`OpenPencil changed in ${path}; review the pinned compatibility adapter`);
       code = code.replace(before, after);
     }
     return { code, map: null };
