@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomBytes, createHash } from 'node:crypto';
-import { readFile, writeFile, mkdtemp } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, mkdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { once } from 'node:events';
@@ -27,6 +27,8 @@ assert.equal(Object.keys(packet.blobs).length, 2);
 assert.equal(packet.variants[0].assets[0].data_ref, packet.variants[1].assets[0].data_ref);
 assert.ok(packet.capture_stats.packet_bytes < packet.capture_stats.bytes_before_deduplication * .6);
 
+await mkdir('.runtime', { recursive: true });
+await mkdir('artifacts', { recursive: true });
 const allocator = createServer(); allocator.listen(0, '127.0.0.1'); await once(allocator, 'listening');
 const port = allocator.address().port; await new Promise(r => allocator.close(r));
 const storage = await mkdtemp(resolve('.runtime/native-wire-qa-')), origin = `http://127.0.0.1:${port}`;
