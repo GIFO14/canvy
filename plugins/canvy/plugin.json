@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "canvy",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Local OpenPencil design canvas for Codex",
   "license": "MIT",
   "extensions": { "com.openai": { "interface": { "displayName": "Canvy", "shortDescription": "Minimal canvas for Codex", "category": "Creativity" } } }

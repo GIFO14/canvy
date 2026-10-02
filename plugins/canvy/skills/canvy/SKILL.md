@@ -33,6 +33,8 @@ Use `canvas_import_react` for actual React/CSS, not `canvas_render`. Supply a de
 
 `tailwind: true` uses bundled v4 utilities; provide precompiled CSS for other configurations. Preserve supplied SVGs, images and fonts rather than substituting your own. Read `canvas_get_import_report` using the returned `import_id`; report missing assets, unsupported CSS and font registration failures. Geometry/style capture is not proof of visual fidelity: compare a native export with the rendered source. Imported variants are fixed editable snapshots; responsive behavior remains in the original prototype.
 
+Screen imports preserve the exact requested viewport size and clip overflow; an explicit selector captures the component's border box. Emoji use disclosed browser composite layers with their original text retained, because registering a text font does not prove that its color emoji fallback is available natively. Compare exports at scale 1 with a sufficient `maxEdge` before judging dimensions.
+
 `canvas_preview_import` opens an import/frame in the same native panel. `canvas_preview_action` supports typed click/fill/snapshot/close operations using selectors. No eval gateway. The opaque prototype cannot access editor state, MCP, credentials or network; do not grant it those capabilities. Native edits do not update React source; transient interaction state is not persisted. Original code, resources, reports and IDs survive document reload in `.freecanvas`; `.fig` backups exclude prototype code and font files. Do not replay an uncertain import or preview action after timeout.
 
 ## Persistence and recovery

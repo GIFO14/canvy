@@ -1,10 +1,11 @@
 // Serialized into the capture browser. Keep this function self-contained.
-export async function collectFrontend({ selector, maxNodes }) {
+export async function collectFrontend({ selector, maxNodes, viewportFrame = false }) {
   const root = document.querySelector(selector);
   if (!root) throw new Error('Capture selector was not found');
-  const bounds = root.getBoundingClientRect(), nodes = [], issues = [], assets = [];
+  const bounds = viewportFrame ? { x: 0, y: 0, width: innerWidth, height: innerHeight } : root.getBoundingClientRect(), nodes = [], issues = [], assets = [];
   window.__canvyCaptureAttributes = [];
   const issue = (code, element, message) => issues.push({ code, selector: element.id ? '#' + element.id : element.tagName.toLowerCase(), message });
+  const usesEmoji = text => /[\p{Extended_Pictographic}\p{Emoji_Presentation}]/u.test(text);
   const color = value => {
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
     const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = value; ctx.fillRect(0, 0, 1, 1);
@@ -98,6 +99,10 @@ export async function collectFrontend({ selector, maxNodes }) {
     if (s.writingMode !== 'horizontal-tb') raster('composite', 'Vertical text layout preserved as a browser visual layer');
     if (s.zIndex !== 'auto' && element.parentElement !== root && getComputedStyle(element.parentElement).zIndex === 'auto') issue('STACKING_CONTEXT', element, 'Cross-ancestor stacking requires visual review; ordinary sibling order is preserved');
     if (s.textOverflow === 'ellipsis') raster('composite', 'Browser text truncation preserved as a visual layer');
+    // Color emoji and joined/modifier sequences use browser/system font
+    // fallback outside the captured font faces. Preserve that actual visual
+    // instead of silently exporting missing glyphs from a native text node.
+    if ([...element.childNodes].some(child => child.nodeType === Node.TEXT_NODE && usesEmoji(child.textContent))) raster('composite', 'Emoji font fallback preserved as a browser visual layer; original text is retained');
     if (s.animationName !== 'none') issue('ANIMATION', element, 'Animation is captured at one instant; native nodes do not animate');
     for (const pseudo of ['::before', '::after']) { const p = getComputedStyle(element, pseudo); if (p.content !== 'none' && p.content !== 'normal') raster('decoration', 'Generated CSS content preserved as a browser decoration layer'); }
     if (element instanceof SVGElement && element.tagName.toLowerCase() === 'svg') {
@@ -137,7 +142,7 @@ export async function collectFrontend({ selector, maxNodes }) {
         const textProps = { parent: key, type: 'text', color: color(s.color), family, weight: parseInt(s.fontWeight) || 400, fontStyle: s.fontStyle, fontSize: parseFloat(s.fontSize), lineHeight: parseFloat(s.lineHeight) || parseFloat(s.fontSize) * 1.2, letterSpacing: parseFloat(s.letterSpacing) || 0, align: s.textAlign, decoration: s.textDecorationLine };
         // Preserve actual line breaks/inline wrapping instead of asking Skia to
         // reflow a bounding rectangle with a potentially different line breaker.
-        if (range.getClientRects().length > 1) {
+        if (range.getClientRects().length > 1 && !usesEmoji(text)) {
           const lines = [];
           for (let i = 0; i < child.textContent.length; i++) {
             range.setStart(child, i); range.setEnd(child, i + 1); const glyph = range.getBoundingClientRect();
@@ -160,5 +165,8 @@ export async function collectFrontend({ selector, maxNodes }) {
   }
   visit(root, null);
   for (const font of fonts) assets.push({ kind: 'font', ...font, data: window.__canvyAssetOriginals?.get(font.url) ?? (font.url?.startsWith('data:') ? font.url : null) });
-  return { origin: { x: bounds.x + scrollX, y: bounds.y + scrollY }, width: Math.max(bounds.width, root.scrollWidth), height: Math.max(bounds.height, root.scrollHeight), nodes, assets, issues };
+  // A responsive screen is exactly its requested viewport. Overflow (including
+  // offscreen tooltips) must not silently grow its export bounds. An explicit
+  // selector instead captures that component's visible border box.
+  return { origin: { x: bounds.x + scrollX, y: bounds.y + scrollY }, width: bounds.width, height: bounds.height, nodes, assets, issues };
 }

@@ -41,7 +41,7 @@ try {
   checks.push('Collapsed zero-size native app initializes and attaches without RAF');
   const references = [];
   const captured = await captureFrontend(input, { onCapture: async (page, viewport) => {
-    const png = await page.locator('#canvy-root').screenshot(); references.push(png.toString('base64'));
+    const png = await page.screenshot(); references.push(png.toString('base64'));
     await writeFile(`artifacts/frontend-reference-${viewport.width}.png`, png);
   } });
   const imported = await call('canvas_import_react', { ...target, ...input });
@@ -49,6 +49,10 @@ try {
   const checkpoint = () => readFile(resolve(data, 'canvases', document.id + '.freecanvas'), 'utf8').then(decodeDocument);
   let graph = await checkpoint();
   const [mobile, desktop] = imported.frames;
+  for (const [index, frame] of imported.frames.entries()) {
+    assert.equal(graph.getNode(frame.id).width, input.viewports[index].width);
+    assert.equal(graph.getNode(frame.id).height, input.viewports[index].height);
+  }
   const mobileSource = captured.variants[0].nodes.find(n => n.name === 'summary');
   const desktopSource = captured.variants[1].nodes.find(n => n.name === 'summary');
   const ms = graph.getNode(mobile.node_map[mobileSource.key]), ds = graph.getNode(desktop.node_map[desktopSource.key]);
@@ -144,7 +148,7 @@ try {
   const effectsInput = { source: effectsSource, css: effectsCss, files, viewports: [{ width: 400, height: 800 }], name: 'Browser effects' };
   let effectsReference;
   const effectCapture = await captureFrontend(effectsInput, { onCapture: async page => {
-    effectsReference = (await page.locator('#canvy-root').screenshot()).toString('base64');
+    effectsReference = (await page.screenshot()).toString('base64');
     await writeFile('artifacts/frontend-effects-reference.png', Buffer.from(effectsReference, 'base64'));
   } });
   const effectImport = await call('canvas_import_react', { ...target, ...effectsInput });
@@ -160,6 +164,12 @@ try {
   assert.ok(pattern.childIds.some(id => graph.getNode(id).type === 'TEXT' && graph.getNode(id).visible));
   const rotated = graph.getNode(effectFrame.node_map[effectNodes.find(n => n.name === 'rotated').key]);
   assert.ok(rotated.childIds.some(id => graph.getNode(id).type === 'TEXT' && !graph.getNode(id).visible));
+  const emojiSource = effectNodes.find(n => n.name === 'emoji-avatar');
+  const emoji = graph.getNode(effectFrame.node_map[emojiSource.key]);
+  assert.equal(emojiSource.raster.mode, 'composite');
+  assert.ok(emoji.childIds.some(id => graph.getNode(id).fills.some(f => f.type === 'IMAGE')));
+  assert.ok(emoji.childIds.some(id => graph.getNode(id).text === '👨🏼‍✈️' && !graph.getNode(id).visible));
+  assert.ok(effectFrame.visual_layers.some(n => /Emoji font fallback/.test(n.reason)));
   const overlap = graph.getNode(effectFrame.node_map[effectNodes.find(n => n.name === 'overlap').key]);
   assert.deepEqual(overlap.childIds.map(id => graph.getNode(id).name), ['below', 'above']);
   assert.ok(effectFrame.visual_layers.some(n => n.mode === 'decoration'));
@@ -175,12 +185,24 @@ try {
   }, { a: effectsReference, b: effectExport.data });
   assert.equal(effectsVisual.dimensions, true, JSON.stringify(effectsVisual));
   assert.ok(effectsVisual.meanAbsoluteChannelError < 0.035, JSON.stringify(effectsVisual));
+  const emojiVisual = await host.page.evaluate(async ({ a, b, box }) => {
+    const pixels = async data => {
+      const image = new Image(); const url = URL.createObjectURL(new Blob([Uint8Array.from(atob(data), c => c.charCodeAt(0))], { type: 'image/png' }));
+      image.src = url; await image.decode(); URL.revokeObjectURL(url);
+      const c = document.createElement('canvas'); c.width = image.width; c.height = image.height; c.getContext('2d').drawImage(image, 0, 0);
+      return c.getContext('2d').getImageData(box.x, box.y, box.width, box.height).data;
+    };
+    const source = await pixels(a), native = await pixels(b); let error = 0;
+    for (let i = 0; i < source.length; i++) error += Math.abs(source[i] - native[i]);
+    return error / source.length / 255;
+  }, { a: effectsReference, b: effectExport.data, box: emojiSource.box });
+  assert.ok(emojiVisual < 0.02, `Emoji avatar pixel mismatch: ${emojiVisual}`);
   const patternText = effectNodes.find(n => n.text === 'Original background image');
   await call('canvas_set_text', { ...target, id: effectFrame.node_map[patternText.key], text: 'Editable over decoration' });
   await call('switch_canvas', {}); await call('switch_canvas', target);
   const effectsReport = await call('canvas_get_import_report', { ...target, import_id: effectImport.import_id });
   assert.deepEqual(effectsReport.frames[0].visual_layers, effectFrame.visual_layers);
-  checks.push('Native gradients, editable browser line fragments and sibling stacking order', 'Background images, generated content, form chrome, transformed subtrees and complex SVGs retain disclosed visual layers', 'Editable text over raster decorations and visual-layer reports survive autosave and reload');
+  checks.push('Native gradients, editable browser line fragments and sibling stacking order', 'Background images, generated content, form chrome, transformed subtrees and complex SVGs retain disclosed visual layers', 'Emoji avatars preserve the browser visual, original text and explicit fallback report', 'Editable text over raster decorations and visual-layer reports survive autosave and reload');
   const unsupported = await captureFrontend({ source: 'export default()=> <div style={{padding:20,backgroundImage:"linear-gradient(red,blue)",filter:"blur(1px)"}}>Unsupported effects<img src="https://example.invalid/private.png"/></div>' });
   const issues = unsupported.variants[0].issues;
   assert.ok(unsupported.variants[0].nodes.some(n => n.backgroundPaint?.type === 'GRADIENT_LINEAR'));
@@ -189,6 +211,12 @@ try {
   await assert.rejects(compileFrontend({ source, files: [{ path: '../escape.ts', content: '' }] }), /relative/);
   const nested = await compileFrontend({ entry: 'ui/Screen.tsx', files: [{ path: 'ui/Screen.tsx', content: "import styles from './styles.module.css'; export default()=> <div className={styles.card}>CSS modules</div>" }, { path: 'ui/styles.module.css', content: '.card{padding:12px;color:red}' }] });
   assert.match(nested.html, /CSS modules/);
+  const overflowInput = { source: 'export default()=> <main style={{height:80,position:"relative"}}>Screen<span style={{position:"absolute",left:450,visibility:"hidden"}}>Hidden tooltip</span></main>', viewports: [{ width: 400, height: 500 }] };
+  const overflow = await captureFrontend(overflowInput);
+  assert.deepEqual([overflow.variants[0].width, overflow.variants[0].height], [400, 500]);
+  const component = await captureFrontend({ ...overflowInput, selector: 'main' });
+  assert.deepEqual([component.variants[0].width, component.variants[0].height], [400, 80]);
+  checks.push('Screen frames match requested viewport sizes; hidden overflow cannot expand exports', 'Explicit component selectors preserve their visible border box');
   const project = resolve(data, 'frontend-project');
   await mkdir(resolve(project, 'src'), { recursive: true });
   await writeFile(resolve(project, 'src/Screen.tsx'), "import Label from './Label';import './screen.css';export default()=> <main className='p-6'><Label/></main>");

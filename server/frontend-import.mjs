@@ -129,7 +129,7 @@ export async function captureFrontend(input, { onCapture } = {}) {
         await Promise.all([...document.images].map(img => img.decode().catch(() => {})));
         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       });
-      const snapshot = await page.evaluate(collectFrontend, { selector: input.selector ?? '#canvy-root', maxNodes: 2000 });
+      const snapshot = await page.evaluate(collectFrontend, { selector: input.selector ?? '#canvy-root', maxNodes: 2000, viewportFrame: !input.selector });
       await captureRasterLayers(page, snapshot);
       for (const resource of snapshot.assets) {
         if (resource.url?.startsWith('http://canvy-import.local')) { const url = new URL(resource.url); resource.data = capturedAssets.get(url.pathname + url.search) ?? null; }

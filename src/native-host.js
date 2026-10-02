@@ -2,7 +2,7 @@ import { App } from '@modelcontextprotocol/ext-apps';
 import { OpenAIExtensions } from '@openai/mcp-extensions/app';
 import { encodeWire, decodeWire, WIRE_CHUNK_CHARS } from './wire-format.js';
 export async function connectNativeHost() {
-  const app = new App({ name: 'Canvy', version: '0.5.3' }, {}, { autoResize: false });
+  const app = new App({ name: 'Canvy', version: '0.5.4' }, {}, { autoResize: false });
   const extensions = new OpenAIExtensions(app);
   // Install notification handlers before the initial host handshake.
   let requestedDocument;
@@ -28,7 +28,7 @@ export async function connectNativeHost() {
   }
   // Attach to Home first. A claimed/missing requested document must not prevent
   // the panel from mounting and offering the user's other persistent canvases.
-  const bootstrap = await tool('_canvas_bootstrap', { ui_version: '0.5.3' });
+  const bootstrap = await tool('_canvas_bootstrap', { ui_version: '0.5.4' });
   let lastInteraction = 0;
   const interaction = () => { lastInteraction = Date.now(); };
   document.addEventListener('pointerdown', interaction);
@@ -39,7 +39,7 @@ export async function connectNativeHost() {
     if (reconnecting) return reconnecting;
     reconnecting = (async () => {
       const previous = { ...bootstrap };
-      const attached = await tool('_canvas_bootstrap', { document_id: bootstrap.document?.id, ui_version: '0.5.3', previous_session: previous.session });
+      const attached = await tool('_canvas_bootstrap', { document_id: bootstrap.document?.id, ui_version: '0.5.4', previous_session: previous.session });
       Object.assign(bootstrap, attached);
       try { await host.onReconnect?.(attached); }
       catch (error) {
@@ -78,7 +78,7 @@ export async function connectNativeHost() {
       if (!result.saved || result.document_id !== document_id) throw new Error('Native save was not acknowledged');
       return result;
     },
-    exchange: (responses) => nativeTool('_canvas_exchange', () => ({ session: bootstrap.session, responses, view: { document_id: bootstrap.document?.id ?? null, navigation: true, ui_version: '0.5.3', ready: Boolean(host.view?.ready), switching: Boolean(host.view?.switching), active: document.visibilityState !== 'hidden' && document.hasFocus(), last_interaction_at: lastInteraction } })),
+    exchange: (responses) => nativeTool('_canvas_exchange', () => ({ session: bootstrap.session, responses, view: { document_id: bootstrap.document?.id ?? null, navigation: true, ui_version: '0.5.4', ready: Boolean(host.view?.ready), switching: Boolean(host.view?.switching), active: document.visibilityState !== 'hidden' && document.hasFocus(), last_interaction_at: lastInteraction } })),
     library: control,
     switch: document_id => control('switch', { document_id }),
     context: async (packet) => {

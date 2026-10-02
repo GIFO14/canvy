@@ -17,7 +17,7 @@ try {
   const tools = await client.listTools();
   const open = tools.tools.find((t) => t.name === 'open_canvas');
   assert.deepEqual(open._meta['openai/ui'].entrypoints, [{ type: 'thread' }, { type: 'global' }]);
-  assert.equal(open._meta.ui.resourceUri, 'ui://canvy/canvas/v4');
+  assert.equal(open._meta.ui.resourceUri, 'ui://canvy/canvas/v5');
   const result = await client.callTool({ name: 'open_canvas', arguments: {} });
   assert.equal(result.structuredContent.presentation, 'native-plugin-canvas');
   assert.ok(!('url' in result.structuredContent));
