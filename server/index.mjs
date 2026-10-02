@@ -39,9 +39,10 @@ export async function sendRPC(body) {
   const surface = surfaces[0];
   const id = randomUUID();
   return new Promise((resolveRPC, reject) => {
-    const timer = setTimeout(() => { pending.delete(id); reject(new Error('Canvas request timed out')); }, 30000);
+    const timeout = body.command === 'canvy_import_frontend' ? 120000 : 30000;
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error('Canvas request timed out; its outcome is uncertain. Inspect the document before retrying.')); }, timeout);
     pending.set(id, { resolve: resolveRPC, reject, timer, session: surface.id });
-    const request = { id, ...body, args: { ...body.args, document_id: surface.document_id } };
+    const request = { id, ...body, deadline: Date.now() + timeout, args: { ...body.args, document_id: surface.document_id } };
     if (surface.browser) surface.browser.send(JSON.stringify(request));
     else surface.requests.push(request);
   });
@@ -55,7 +56,7 @@ app.use('*', async (c, next) => {
   c.header('X-Content-Type-Options', 'nosniff');
   await next();
 });
-app.get('/health', (c) => c.json({ name: 'canvy', version: '0.5.1', pid: process.pid, connected: browser?.readyState === 1 || liveNative().length > 0, url: origin }));
+app.get('/health', (c) => c.json({ name: 'canvy', version: '0.5.3', pid: process.pid, connected: browser?.readyState === 1 || liveNative().length > 0, url: origin }));
 app.post('/api/diagnostics', async c => {
   if (c.req.header('authorization') !== `Bearer ${bridgeToken}`) return c.json({ error: 'Unauthorized' }, 401);
   const { document_id } = await c.req.json();
@@ -64,7 +65,7 @@ app.post('/api/diagnostics', async c => {
   if (browser?.readyState === 1) open.push('freecanvas');
   const selected = document_id ? open.filter(id => id === document_id) : open;
   const connection_state = selected.length === 1 ? 'document_connected' : selected.length > 1 ? 'multiple_documents_connected' : live.length ? 'home_connected' : 'panel_not_connected';
-  return c.json({ version: '0.5.1', document_id: document_id ?? (selected.length === 1 ? selected[0] : null), connection_state, native_panels: live.length, open_documents: open, requested_document_connected: selected.length === 1, guidance: selected.length === 1 ? null : selected.length > 1 ? 'Specify document_id.' : document_id ? 'Open this document from the native Canvy Home. An opening acknowledgement alone does not attach a panel.' : 'Open and expand the native Canvy panel in Codex.', limits: { save_bytes: 32 * 1024 * 1024, reversible_structure_nodes_and_variables: 10000, rpc_timeout_ms: 30000, native_panels: 32 } });
+  return c.json({ version: '0.5.3', document_id: document_id ?? (selected.length === 1 ? selected[0] : null), connection_state, native_panels: live.length, open_documents: open, requested_document_connected: selected.length === 1, guidance: selected.length === 1 ? null : selected.length > 1 ? 'Specify document_id.' : document_id ? 'Open this document from the native Canvy Home. An opening acknowledgement alone does not attach a panel.' : 'Open and expand the native Canvy panel in Codex.', limits: { save_bytes: 32 * 1024 * 1024, reversible_structure_nodes_and_variables: 10000, rpc_timeout_ms: 30000, import_timeout_ms: 120000, native_panels: 32 } });
 });
 app.get('/api/bootstrap', async (c) => {
   return c.json({ token: bridgeToken, ...await documents.read('freecanvas'), documents: documents.list() });
@@ -122,13 +123,18 @@ app.post('/api/native', async (c) => {
     if (nativeCanvases.size >= 32) throw new Error('Too many canvas panels');
     const session = { id: randomUUID(), seen: Date.now(), requests: [], document_id: id };
     nativeCanvases.set(session.id, session);
-    panelNavigator.observe(session.id, { document_id: id, navigation: ['0.3.4', '0.3.5', '0.3.6', '0.3.7', '0.4.0', '0.4.1', '0.5.0', '0.5.1'].includes(body.ui_version), ui_version: body.ui_version ?? null });
+    panelNavigator.observe(session.id, { document_id: id, navigation: ['0.3.4', '0.3.5', '0.3.6', '0.3.7', '0.4.0', '0.4.1', '0.5.0', '0.5.1', '0.5.2', '0.5.3'].includes(body.ui_version), ui_version: body.ui_version ?? null });
     return c.json({ session: session.id, ...data, documents: documents.list() });
   }
   const nativeCanvas = nativeCanvases.get(body.session);
   if (!nativeCanvas) return c.json({ error: 'Native canvas session expired. Reopen Canvy.' }, 409);
   if (Date.now() - nativeCanvas.seen >= 15000) { nativeCanvases.delete(nativeCanvas.id); return c.json({ error: 'Native canvas session expired. Reopen Canvy.' }, 409); }
   nativeCanvas.seen = Date.now();
+  if (body.operation === 'heartbeat') {
+    if (body.document_id !== undefined && body.document_id !== nativeCanvas.document_id) throw new Error('Transfer target does not match this canvas session');
+    panelNavigator.observe(nativeCanvas.id, { document_id: nativeCanvas.document_id });
+    return c.json({ connected: true });
+  }
   async function switchCanvas(id) {
     if (nativeCanvas.requests.length || [...pending.values()].some(p => p.session === nativeCanvas.id)) throw new Error('The canvas is processing an edit. Try again in a moment.');
     const data = id ? await documents.read(id) : { document: null, state: null, saved: null };

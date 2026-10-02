@@ -49,7 +49,7 @@ try {
   const listing = await call('list_open_canvases');
   assert.equal(listing.shared, true); assert.equal(listing.panels.length, 1);
   const panel_id = listing.panels[0].panel_id;
-  assert.equal(listing.panels[0].ui_version, '0.5.1');
+  assert.equal(listing.panels[0].ui_version, '0.5.3');
   const loaded = await call('switch_canvas', { document_id: a.id, panel_id });
   assert.equal(loaded.document_id, a.id); assert.equal(loaded.panel_id, panel_id); assert.equal(loaded.ready, true);
   const shape = await call('canvas_render', { document_id: a.id, jsx: '<Frame name="Autosaved card" w={400} h={220} bg="#ffffff"><Text name="Editable heading" x={24} y={24} w={350} h={32} fontSize={20}>Persistent document A</Text></Frame>' });

@@ -1,7 +1,8 @@
 import { App } from '@modelcontextprotocol/ext-apps';
 import { OpenAIExtensions } from '@openai/mcp-extensions/app';
+import { encodeWire, decodeWire, WIRE_CHUNK_CHARS } from './wire-format.js';
 export async function connectNativeHost() {
-  const app = new App({ name: 'Canvy', version: '0.5.1' }, {}, { autoResize: false });
+  const app = new App({ name: 'Canvy', version: '0.5.3' }, {}, { autoResize: false });
   const extensions = new OpenAIExtensions(app);
   // Install notification handlers before the initial host handshake.
   let requestedDocument;
@@ -9,13 +10,25 @@ export async function connectNativeHost() {
   app.ontoolresult = params => { requestedDocument = params.structuredContent?.document_id ?? requestedDocument; };
   await app.connect();
   async function tool(name, args = {}) {
-    const result = await app.callServerTool({ name, arguments: args });
+    const result = await app.callServerTool({ name, arguments: { ...args, wire_version: 1 } });
     if (result.isError) throw new Error(result.content?.find((c) => c.type === 'text')?.text ?? 'Codex tool failed');
-    return result.structuredContent;
+    const value = result.structuredContent;
+    if (!value?.canvy_wire) return value;
+    const wire = { ...value.canvy_wire };
+    if (wire.transfer) {
+      const chunks = [];
+      for (let index = 0; index < wire.transfer.total; index++) {
+        const chunk = await tool('_canvas_exchange', { session: args.session ?? value.session, download: { id: wire.transfer.id, index } });
+        if (chunk.id !== wire.transfer.id || chunk.index !== index || typeof chunk.data !== 'string') throw new Error('Invalid native download acknowledgement');
+        chunks.push(chunk.data);
+      }
+      wire.data = chunks.join('');
+    }
+    return decodeWire(wire);
   }
   // Attach to Home first. A claimed/missing requested document must not prevent
   // the panel from mounting and offering the user's other persistent canvases.
-  const bootstrap = await tool('_canvas_bootstrap', { ui_version: '0.5.1' });
+  const bootstrap = await tool('_canvas_bootstrap', { ui_version: '0.5.3' });
   let lastInteraction = 0;
   const interaction = () => { lastInteraction = Date.now(); };
   document.addEventListener('pointerdown', interaction);
@@ -26,7 +39,7 @@ export async function connectNativeHost() {
     if (reconnecting) return reconnecting;
     reconnecting = (async () => {
       const previous = { ...bootstrap };
-      const attached = await tool('_canvas_bootstrap', { document_id: bootstrap.document?.id, ui_version: '0.5.1', previous_session: previous.session });
+      const attached = await tool('_canvas_bootstrap', { document_id: bootstrap.document?.id, ui_version: '0.5.3', previous_session: previous.session });
       Object.assign(bootstrap, attached);
       try { await host.onReconnect?.(attached); }
       catch (error) {
@@ -36,10 +49,10 @@ export async function connectNativeHost() {
     })();
     try { await reconnecting; } finally { reconnecting = undefined; }
   }
-  async function nativeTool(name, argumentsForSession) {
+  async function nativeTool(name, argumentsForSession, checkpoint) {
     if (reconnecting) {
       await reconnecting;
-      if (name === '_canvas_persist') host.validateCheckpoint?.(argumentsForSession().state);
+      if (name === '_canvas_persist') host.validateCheckpoint?.(checkpoint ?? argumentsForSession().state);
     }
     try { return await tool(name, argumentsForSession()); }
     catch (error) {
@@ -47,15 +60,25 @@ export async function connectNativeHost() {
       // never replay an edit or write after an uncertain transport failure.
       if (!/Native canvas session expired/.test(error.message)) throw error;
       await reconnect();
-      if (name === '_canvas_persist') host.validateCheckpoint?.(argumentsForSession().state);
+      if (name === '_canvas_persist') host.validateCheckpoint?.(checkpoint ?? argumentsForSession().state);
       return tool(name, argumentsForSession());
     }
   }
   const control = async (operation, args = {}) => (await nativeTool('_canvas_exchange', () => ({ session: bootstrap.session, responses: [{ id: '$freecanvas/control', result: { operation, ...args } }] }))).control;
   const host = {
     app, bootstrap,
-    save: (document_id, state, fig) => nativeTool('_canvas_persist', () => ({ session: bootstrap.session, document_id, state, fig })),
-    exchange: (responses) => nativeTool('_canvas_exchange', () => ({ session: bootstrap.session, responses, view: { document_id: bootstrap.document?.id ?? null, navigation: true, ui_version: '0.5.1', ready: Boolean(host.view?.ready), switching: Boolean(host.view?.switching), active: document.visibilityState !== 'hidden' && document.hasFocus(), last_interaction_at: lastInteraction } })),
+    save: async (document_id, state, fig) => {
+      const wire = await encodeWire({ state, fig });
+      const id = crypto.randomUUID(), total = Math.ceil(wire.data.length / WIRE_CHUNK_CHARS);
+      let result;
+      for (let index = 0; index < total; index++) {
+        result = await nativeTool('_canvas_persist', () => ({ session: bootstrap.session, document_id, transfer: { id, index, total, bytes: wire.bytes, data: wire.data.slice(index * WIRE_CHUNK_CHARS, (index + 1) * WIRE_CHUNK_CHARS) } }), state);
+        if (index < total - 1 && (!result.transfer_received || result.index !== index)) throw new Error('Invalid native upload acknowledgement');
+      }
+      if (!result.saved || result.document_id !== document_id) throw new Error('Native save was not acknowledged');
+      return result;
+    },
+    exchange: (responses) => nativeTool('_canvas_exchange', () => ({ session: bootstrap.session, responses, view: { document_id: bootstrap.document?.id ?? null, navigation: true, ui_version: '0.5.3', ready: Boolean(host.view?.ready), switching: Boolean(host.view?.switching), active: document.visibilityState !== 'hidden' && document.hasFocus(), last_interaction_at: lastInteraction } })),
     library: control,
     switch: document_id => control('switch', { document_id }),
     context: async (packet) => {

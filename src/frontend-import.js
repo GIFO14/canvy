@@ -18,6 +18,16 @@ export function restoreImportFonts(graph) {
 
 export async function importFrontend(editor, figma, packet, position = {}) {
   if (packet.version !== 1 || !Array.isArray(packet.variants)) throw new Error('Unsupported frontend capture');
+  const resolveResource = resource => {
+    const result = { ...resource };
+    for (const field of ['data', 'url']) if (resource[field + '_ref']) {
+      const data = packet.blobs?.[resource[field + '_ref']];
+      if (typeof data !== 'string') throw new Error('Frontend resource reference is missing');
+      result[field] = data;
+    }
+    return result;
+  };
+  packet = { ...packet, variants: packet.variants.map(variant => ({ ...variant, assets: variant.assets.map(resolveResource), nodes: variant.nodes.map(node => ({ ...resolveResource(node), ...(node.raster ? { raster: resolveResource(node.raster) } : {}) })) })) };
   if (editor.graph.nodes.size + packet.variants.reduce((n, v) => n + v.nodes.length, 0) > 10000) throw new Error('Import exceeds reversible document node limit');
   const graph = editor.graph;
   const resources = graph.canvyResources ??= { fonts: {}, imports: {} };
@@ -127,7 +137,7 @@ export async function importFrontend(editor, figma, packet, position = {}) {
   }
   if (graph.nodes.size + graph.variables.size > 10000) throw new Error('Converted SVGs exceed reversible document node limit');
   const assets = [...new Map(packet.variants.flatMap(v => v.assets).filter(a => a.kind === 'image').map(a => [a.url, a])).values()];
-  resources.imports[import_id] = { name: packet.name, html: packet.html, originals, assets, frames, issues: report, createdAt: new Date().toISOString() };
+  resources.imports[import_id] = { name: packet.name, html: packet.html, originals, assets, frames, issues: report, capture_stats: packet.capture_stats, createdAt: new Date().toISOString() };
   editor.select(frames.map(f => f.id)); editor.zoomToFit(); editor.requestRender();
   return { import_id, frames, issues: report, warning_count: report.length + frames.reduce((n, f) => n + f.issues.length, 0), interactive_preview: true };
 }

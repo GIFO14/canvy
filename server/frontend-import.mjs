@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { collectFrontend } from './frontend-snapshot.mjs';
 import { captureRasterLayers } from './frontend-raster.mjs';
 import { installPrototypeAssets } from '../src/prototype-assets.js';
+import { deduplicateFrontendPacket } from './frontend-packet.mjs';
 
 const checkout = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const mime = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.otf': 'font/otf', '.woff': 'font/woff', '.woff2': 'font/woff2' };
@@ -147,8 +148,8 @@ export async function captureFrontend(input, { onCapture } = {}) {
         embeddedHtml = embeddedHtml.replaceAll(`"${url}"`, `"${data}"`).replaceAll(`'${url}'`, `'${data}'`).replaceAll(`url(${url})`, `url(${data})`);
       }
     }
-    const packet = { version: 1, name: input.name ?? 'Imported frontend', variants, html: embeddedHtml, issues, assets: [...capturedAssets].map(([url, data]) => ({ url, data })) };
-    if (Buffer.byteLength(JSON.stringify(packet)) > 6 * 1024 * 1024) throw new Error('Import payload exceeds 6 MiB; use fewer variants or smaller assets');
+    const packet = deduplicateFrontendPacket({ version: 1, name: input.name ?? 'Imported frontend', variants, html: embeddedHtml, issues, assets: [...capturedAssets].map(([url, data]) => ({ url, data })) });
+    if (Buffer.byteLength(JSON.stringify(packet)) > 16 * 1024 * 1024) throw new Error('Deduplicated import payload exceeds 16 MiB; inspect original asset sizes');
     return packet;
   } finally { await browser.close(); }
 }

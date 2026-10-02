@@ -9,23 +9,28 @@ import { addCompatibilityTools } from './tool-compatibility.mjs';
 import { createServiceClient } from './service-client.mjs';
 import { createPanelNavigator } from './panel-navigation.mjs';
 import { captureFrontend } from './frontend-import.mjs';
+import { createNativeWire } from './native-wire.mjs';
+import { WIRE_CHUNK_CHARS } from '../src/wire-format.js';
 
 export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
-  const server = new McpServer({ name: 'canvy', version: '0.5.1' });
+  const server = new McpServer({ name: 'canvy', version: '0.5.3' });
   const catalog = addCompatibilityTools(server);
+  const wire = createNativeWire();
   registerTools(server, { policy: { allowEval: false, disabledTools: ['open_file', 'save_file', 'new_document', 'list_documents'] }, mcpRoot: root, sendRPC: routedRPC });
   const register = (name, description, entries, handler, meta = {}, readOnly = false) => server.registerTool(name, {
     title: name === 'open_canvas' ? 'Canvy' : name, description, inputSchema: toStandardJsonSchema(v.object(entries)),
     annotations: { readOnlyHint: readOnly, destructiveHint: false, openWorldHint: false }, _meta: meta
   }, async (args) => {
     try {
-      const data = await handler(args);
+      const value = await handler(args);
+      const data = args.wire_version === 1 && !args.download ? wire.encode(value) : value;
+      if (args.wire_version === 1) return { content: [{ type: 'text', text: 'Canvy native response' }], structuredContent: data };
       return { content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data };
     } catch (error) {
       return { isError: true, content: [{ type: 'text', text: error.message }] };
     }
   });
-  const uri = 'ui://canvy/canvas/v3';
+  const uri = 'ui://canvy/canvas/v4';
   const openMetadata = OpenAIUiToolMetadataSchema.parse({ entrypoints: [{ type: 'thread' }, { type: 'global' }], preferredModelDisplayMode: 'fullscreen' });
   const resourceMetadata = OpenAIUiResourceMetadataSchema.parse({ preferredDisplayMode: 'fullscreen', availableDisplayModes: ['fullscreen', 'pip'] });
   function registerCanvasResource(resourceUri, name) {
@@ -40,6 +45,7 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
   });
   }
   registerCanvasResource(uri, 'canvy-canvas');
+  registerCanvasResource('ui://canvy/canvas/v3', 'canvy-canvas-v3');
   registerCanvasResource('ui://canvy/canvas/v2', 'canvy-canvas-v2');
   registerCanvasResource('ui://canvy/canvas/v1', 'canvy-canvas-v1');
   registerCanvasResource('ui://freecanvas/canvas/v11', 'freecanvas-canvas-v11');
@@ -66,8 +72,8 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
     // import commands. This read also performs explicit document navigation.
     const targetStatus = await routedRPC({ command: 'freecanvas_status', args: { document_id: args.document_id } });
     const attached = (await panels('list')).panels.find(p => p.document_id === targetStatus.document_id);
-    const [major, minor] = (attached?.ui_version ?? '').split('.').map(Number);
-    if (!(major === 0 && minor >= 5)) throw new Error('React import requires Canvy 0.5.0 or newer. Reopen the updated native plugin panel; your saved canvases are preserved.');
+    const [major, minor, patch] = (attached?.ui_version ?? '').split('.').map(Number);
+    if (!(major === 0 && (minor > 5 || minor === 5 && patch >= 2))) throw new Error('React import requires Canvy 0.5.2 or newer. Refresh the plugin session and reopen its native panel; your saved canvases are preserved.');
     const packet = await captureFrontend(args);
     return routedRPC({ command: 'canvy_import_frontend', args: { document_id: targetStatus.document_id, packet, x: args.x, y: args.y, preview: args.preview } });
   });
@@ -82,7 +88,7 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
     if (connection.connection_state !== 'document_connected') return { ...connection, connected: false, ready: false };
     return { ...await sendRPC({ command: 'freecanvas_status', args }), ...connection };
   }, {}, true);
-  register('canvas_diagnostics', 'Inspect native panel attachment, loaded documents, interface versions, runtime limits, and the advertised public tool catalog. Does not require an open canvas. Opening requested is distinct from a connected document.', target, async args => ({ ...await diagnostics(args), ...await panels('list'), connector_version: '0.5.1', tool_profile: catalog.profile, registered_public_tools: catalog.filter(t => t.public).length, tools: catalog.filter(t => t.public && t.advertised) }), {}, true);
+  register('canvas_diagnostics', 'Inspect native panel attachment, loaded documents, interface versions, runtime limits, and the advertised public tool catalog. Does not require an open canvas. Opening requested is distinct from a connected document.', target, async args => ({ ...await diagnostics(args), ...await panels('list'), connector_version: '0.5.3', tool_profile: catalog.profile, registered_public_tools: catalog.filter(t => t.public).length, tools: catalog.filter(t => t.public && t.advertised) }), {}, true);
   register('export_jsx', 'Export a frame or selection to JSX with Tailwind classes. This is a design export, not a running React app.', { ...target, ids: v.array(v.string()) }, async (args) => routedRPC({ command: 'freecanvas_jsx', args }), {}, true);
   register('send_selection_to_chat', 'Read the selected nodes and a bounded context packet for a targeted change request.', target, async (args) => routedRPC({ command: 'freecanvas_context', args }), {}, true);
   const serviceRequest = createServiceClient(origin, { ensureService });
@@ -122,11 +128,11 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
     if (response.status === 404) {
       try {
         const live = await sendRPC({ command: 'freecanvas_status', args });
-        return { version: '0.5.1', service_compatibility: '0.3.0', connection_state: 'document_connected', document_id: live.document_id, open_documents: [live.document_id], requested_document_connected: true, guidance: null, live_status: live };
+        return { version: '0.5.3', service_compatibility: '0.3.0', connection_state: 'document_connected', document_id: live.document_id, open_documents: [live.document_id], requested_document_connected: true, guidance: null, live_status: live };
       } catch (error) {
         const ambiguous = /Multiple canvases/.test(error.message);
         const state = ambiguous ? 'multiple_documents_connected' : /disconnected/.test(error.message) ? 'panel_not_connected' : 'connection_error';
-        return { version: '0.5.1', service_compatibility: '0.3.0', connection_state: state, document_id: args.document_id ?? null, requested_document_connected: false, guidance: ambiguous ? 'Specify document_id.' : error.message };
+        return { version: '0.5.3', service_compatibility: '0.3.0', connection_state: state, document_id: args.document_id ?? null, requested_document_connected: false, guidance: ambiguous ? 'Specify document_id.' : error.message };
       }
     }
     const result = await response.json(); if (!response.ok) throw new Error(result.error ?? 'Connection diagnostics unavailable'); return result;
@@ -145,14 +151,33 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
   register('create_canvas', 'Create a separate persistent local canvas. Use switch_canvas to load it in an existing panel, or open_canvas to open a panel.', { name: v.string() }, args => library('create', args));
   register('rename_canvas', 'Rename a persistent local canvas without changing its contents or ID.', { document_id: v.string(), name: v.string() }, args => library('rename', args));
   const appOnly = { ui: { visibility: ['app'] } };
-  register('_canvas_bootstrap', 'Internal native canvas initialization.', { ...target, ui_version: v.optional(v.string()), previous_session: v.optional(v.string()) }, async args => {
+  const wireVersion = { wire_version: v.optional(v.literal(1)) };
+  const chunk = v.object({ id: v.string(), index: v.pipe(v.number(), v.integer(), v.minValue(0)), total: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(192)), bytes: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(48 * 1024 * 1024)), data: bounded(WIRE_CHUNK_CHARS) });
+  register('_canvas_bootstrap', 'Internal native canvas initialization.', { ...target, ...wireVersion, ui_version: v.optional(v.string()), previous_session: v.optional(v.string()) }, async args => {
     const result = await panels('bootstrap', args);
     if (preferredPanel === args.previous_session) preferredPanel = result.session;
     return result;
   }, appOnly);
-  register('_canvas_exchange', 'Internal native canvas RPC exchange.', { session: v.string(), responses: v.array(v.object({ id: v.string(), result: v.optional(v.unknown()), error: v.optional(v.string()) })), view: v.optional(v.object({ document_id: v.nullable(v.string()), navigation: v.boolean(), ui_version: v.string(), ready: v.boolean(), switching: v.boolean(), active: v.boolean(), last_interaction_at: v.number() })) }, (args) => panels('exchange', args), appOnly);
-  register('_canvas_persist', 'Internal native canvas checkpoint persistence.', { session: v.string(), document_id: v.string(), state: v.string(), fig: v.string() }, (args) => native('persist', args), appOnly);
-  register('_canvas_switch', 'Internal switch or return to Home after flushing edits.', { session: v.string(), document_id: v.optional(v.string()) }, args => native('switch', args), appOnly);
-  register('_canvas_disconnect', 'Internal native canvas teardown.', { session: v.string() }, (args) => panels('disconnect', args), appOnly);
+  register('_canvas_exchange', 'Internal native canvas RPC exchange.', { ...wireVersion, session: v.optional(v.string()), responses: v.optional(v.array(v.object({ id: v.string(), result: v.optional(v.unknown()), error: v.optional(v.string()) }))), download: v.optional(v.object({ id: v.string(), index: v.pipe(v.number(), v.integer(), v.minValue(0)) })), view: v.optional(v.object({ document_id: v.nullable(v.string()), navigation: v.boolean(), ui_version: v.string(), ready: v.boolean(), switching: v.boolean(), active: v.boolean(), last_interaction_at: v.number() })) }, async args => {
+    if (args.download && args.wire_version === 1) {
+      if (args.session) await native('heartbeat', { session: args.session });
+      return wire.download(args.download);
+    }
+    if (!args.session || !args.responses) throw new Error('Native exchange requires session and responses');
+    return panels('exchange', args);
+  }, appOnly);
+  register('_canvas_persist', 'Internal native canvas checkpoint persistence.', { ...wireVersion, session: v.string(), document_id: v.string(), state: v.optional(v.string()), fig: v.optional(v.string()), transfer: v.optional(chunk) }, async args => {
+    if (!args.transfer) {
+      if (typeof args.state !== 'string' || typeof args.fig !== 'string') throw new Error('Checkpoint required');
+      return native('persist', args);
+    }
+    if (args.state !== undefined || args.fig !== undefined || args.wire_version !== 1) throw new Error('Ambiguous native checkpoint transfer');
+    await native('heartbeat', { session: args.session, document_id: args.document_id });
+    const checkpoint = wire.upload(args.session, args.document_id, args.transfer);
+    if (!checkpoint) return { transfer_received: true, index: args.transfer.index };
+    return native('persist', { session: args.session, document_id: args.document_id, ...checkpoint });
+  }, appOnly);
+  register('_canvas_switch', 'Internal switch or return to Home after flushing edits.', { ...wireVersion, session: v.string(), document_id: v.optional(v.string()) }, args => native('switch', args), appOnly);
+  register('_canvas_disconnect', 'Internal native canvas teardown.', { ...wireVersion, session: v.string() }, (args) => panels('disconnect', args), appOnly);
   return server;
 }

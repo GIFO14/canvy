@@ -10,7 +10,7 @@ await ensureService();
 const sendRPC = async (body) => {
   await ensureService();
   const bootstrap = await (await fetch(`${origin}/api/bootstrap`)).json();
-  const res = await fetch(`${origin}/api/rpc`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${bootstrap.token}` }, body: JSON.stringify(body), signal: AbortSignal.timeout(35000) });
+  const res = await fetch(`${origin}/api/rpc`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${bootstrap.token}` }, body: JSON.stringify(body), signal: AbortSignal.timeout(body.command === 'canvy_import_frontend' ? 125000 : 35000) });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error);
   return data;

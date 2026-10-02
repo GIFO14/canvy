@@ -129,7 +129,7 @@ Group related rows and controls so humans can move them together. Inter and Robo
 
 ### Import a real React screen
 
-React import requires Chromium: run `npx playwright install chromium` once, or set `CANVY_BROWSER_CHANNEL=msedge`/`chrome` before installing or starting the connector. The native panel must run Canvy 0.5.0 or newer; reopen an old mounted panel after upgrading. The editable canvas stays inside Codex; Chromium is an invisible local capture worker.
+React import requires Chromium: run `npx playwright install chromium` once, or set `CANVY_BROWSER_CHANNEL=msedge`/`chrome` before installing or starting the connector. The native panel must run Canvy 0.5.2 or newer. Refresh the plugin session after upgrading its bridge tools, then reopen an old mounted panel. Connector, backend and UI versions are reported separately; the 0.5.2 chunk protocol needs an updated backend. The editable canvas stays inside Codex; Chromium is an invisible local capture worker.
 
 Call `canvas_import_react` with a default-exported component. Inline source, optional virtual files and a local project are supported. For a project, make a small entry component that supplies the providers, router and example data needed to render the requested screen. Dependencies resolve from the project's `node_modules`, with Canvy's bundled React as a fallback. No project build scripts are executed.
 
@@ -164,7 +164,9 @@ Capture preserves the initial rendered state. Animation, video, embedded externa
 
 Canvy 0.5.1 initializes an 800 × 600 backing surface even when Codex attaches a collapsed, zero-size panel. Imports, exports, saves and typed prototype actions can run while it is collapsed; the canvas adopts the actual viewport when expanded. Renderer initialization and prototype actions do not wait indefinitely for a suspended animation frame.
 
-Limits: 8 MiB of source input, four viewports between 240 and 3840 px, 2,000 captured nodes per viewport, a 4 MiB compiled prototype and a 6 MiB capture packet. Converted SVG descendants also count toward the document's 10,000-node reversible import limit. `.freecanvas` checkpoints preserve custom fonts and prototypes; `.fig` backups do not bundle prototype code or custom font files.
+Canvy 0.5.2 shares identical font, image and raster bytes across captures. Native transfers use bounded 256 KiB fragments and lossless gzip rather than sending a large checkpoint in one MCP request. A partial upload is not a saved document: acknowledgement waits for all chunks, validation and local persistence. Transfer identity is bound to its session and document; uncertain writes are not replayed. Connection heartbeats continue while edits run in a sequential queue. Imports have a 120-second editor deadline; ordinary operations retain their 30-second deadline.
+
+Limits: 8 MiB of source input, four viewports between 240 and 3840 px, 2,000 captured nodes per viewport, a 4 MiB compiled prototype and a 16 MiB deduplicated capture packet. Capture statistics appear in the import report. Converted SVG descendants also count toward the document's 10,000-node reversible import limit. The combined checkpoint/backup limit remains 32 MiB; transfer compression does not bypass it. `.freecanvas` checkpoints preserve custom fonts and prototypes; `.fig` backups do not bundle prototype code or custom font files.
 
 ### Switching and recovery
 
@@ -209,7 +211,7 @@ Codex is the primary integration. The editor and typed MCP design tools can be r
 For a harness supporting MCP Apps:
 
 1. Build this checkout and register `node /absolute/path/to/canvy/server/stdio.mjs` as a stdio MCP server using your host's configuration format and optional `CANVY_*` settings.
-2. Support the `text/html;profile=mcp-app` resource linked by `open_canvas` through `_meta.ui.resourceUri`. Currently it is `ui://canvy/canvas/v3`; discover it instead of hard-coding it.
+2. Support the `text/html;profile=mcp-app` resource linked by `open_canvas` through `_meta.ui.resourceUri`. Currently it is `ui://canvy/canvas/v4`; discover it instead of hard-coding it. Preserve its negotiated, compressed chunk transfers when adapting the native bridge.
 3. Mount an isolated surface, perform `ui/initialize`, and route app `tools/call` requests to the five app-only `_canvas_*` tools. Preserve their session identity and visibility restrictions.
 4. Handle model-context updates and human-authorized selection messages. Review `src/native-host.js` for OpenAI extension fallbacks; adapt OpenAI entrypoints, fullscreen metadata, messaging and context integration to your host.
 5. Verify persistence, navigation, duplicate-writer rejection, selection targeting and recovery in the actual harness. The [native protocol test host](tests/native-harness.mjs) is a reference for tests, not a production host.
@@ -229,7 +231,7 @@ npm test
 
 On Linux, use `npx playwright install --with-deps chromium` if browser system libraries are missing. To use an installed Edge or Chrome, set `CANVY_BROWSER_CHANNEL=msedge` or `chrome`. Default tests use Playwright Chromium and isolated ports/data; they do not edit your saved canvases.
 
-`npm test` runs compatibility, multicanvas, native navigation, backend recovery, Space-drag and React-import suites sequentially. They exercise the actual bundled resource inside an **opaque MCP Apps protocol harness**. React tests verify responsive geometry, original assets, editable vectors/text, undo, checkpoint reload and modal/form interactions. A passing harness test does not prove a desktop pointer interaction in Codex.
+`npm test` runs native-transfer, compatibility, multicanvas, native navigation, backend recovery, Space-drag and React-import suites sequentially. They exercise the actual bundled resource inside an **opaque MCP Apps protocol harness**. Native-transfer tests preserve a large high-entropy checkpoint through small bridge messages and a save longer than its connection lease. React tests verify responsive geometry, original assets, editable vectors/text, undo, checkpoint reload and modal/form interactions. A passing harness test does not prove a desktop pointer interaction in Codex.
 
 After installing, `npm run test:installed` verifies stdio configuration, native metadata, discovery and a fresh Codex app-server catalog. It uses your installed plugin/backend. Real Codex rendering has been exercised during development; every new host adapter still needs its own integration check.
 

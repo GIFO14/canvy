@@ -1,13 +1,14 @@
 {
   "name": "canvy",
-  "version": "0.5.1",
+  "version": "0.5.3",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 4317",
     "build": "vite build && vite build --config vite.native.config.js && node scripts/build-host.mjs",
     "start": "node server/index.mjs",
-    "test": "npm run test:compatibility && npm run test:multicanvas && npm run test:navigation && npm run test:recovery && npm run test:space-pan && npm run test:frontend",
+    "test": "npm run test:native-wire && npm run test:compatibility && npm run test:multicanvas && npm run test:navigation && npm run test:recovery && npm run test:space-pan && npm run test:frontend",
+    "test:native-wire": "node tests/native-wire.mjs",
     "test:installed": "node tests/installed.mjs && node scripts/diagnose-plugin.mjs",
     "test:multicanvas": "node tests/multicanvas.mjs",
     "test:compatibility": "node tests/compatibility.mjs",

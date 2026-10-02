@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const marketplaceRoot = resolve(root, '.local');
 export async function configurePlugin() {
+  const { version } = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
   const source = resolve(root, 'plugins/canvy');
   const destination = resolve(marketplaceRoot, 'plugins/canvy');
   await mkdir(resolve(destination, '.codex-plugin'), { recursive: true });
@@ -15,6 +16,9 @@ export async function configurePlugin() {
   const config = { $schema: 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json', mcpServers: {
     canvy: { type: 'stdio', command: 'node', args: [resolve(root, 'server/stdio.mjs').replaceAll('\\', '/')],
       env: {
+        // Change the host's MCP configuration identity when upgrading. A new
+        // plugin version must not keep an old process with the same launch args.
+        CANVY_CONNECTOR_VERSION: version,
         CANVY_PORT: process.env.CANVY_PORT ?? process.env.FREECANVAS_PORT ?? '4318',
         CANVY_DATA_DIR: resolve(process.env.CANVY_DATA_DIR ?? process.env.FREECANVAS_DATA_DIR ?? resolve(root, '.runtime')).replaceAll('\\', '/'),
         CANVY_TOOL_PROFILE: process.env.CANVY_TOOL_PROFILE ?? process.env.FREECANVAS_TOOL_PROFILE ?? 'core',
@@ -29,7 +33,7 @@ export async function configurePlugin() {
     plugins: [{ name: 'canvy', source: { source: 'local', path: './plugins/canvy' },
       policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' }, category: 'Creativity' }]
   }, null, 2) + '\n');
-  return { marketplaceRoot, plugin: destination, version: JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')).version };
+  return { marketplaceRoot, plugin: destination, version };
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   console.log(JSON.stringify(await configurePlugin(), null, 2));

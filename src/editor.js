@@ -298,19 +298,27 @@ export function connectBridge(authToken, onStatus) {
     let disposed = false;
     async function poll() {
       let responses = [];
+      let execution = Promise.resolve();
       while (!disposed && !window.__FREECANVAS_NATIVE_HOST__.closed) {
         let failed = false;
+        let outgoing = [];
         try {
-          const data = await window.__FREECANVAS_NATIVE_HOST__.exchange(responses); responses = [];
+          outgoing = responses; responses = [];
+          const data = await window.__FREECANVAS_NATIVE_HOST__.exchange(outgoing);
           status.connected = true; onStatus(true);
           for (const request of data.requests) {
             // The browser transport already JSON-normalizes RPC results. Apply
             // the same wire contract before the host's structured-clone bridge:
             // native viewport adapters include convenience methods.
-            try { responses.push({ id: request.id, result: JSON.parse(JSON.stringify(await runRPC(request))) }); }
-            catch (error) { responses.push({ id: request.id, error: error.message }); }
+            execution = execution.catch(() => {}).then(async () => {
+              try {
+                if (request.deadline && Date.now() >= request.deadline) throw new Error('Canvas request expired before execution; no edit was applied');
+                const result = JSON.parse(JSON.stringify(await runRPC(request)));
+                responses.push({ id: request.id, result });
+              } catch (error) { responses.push({ id: request.id, error: error.message }); }
+            });
           }
-        } catch (error) { failed = true; status.connected = false; onStatus(false); console.error(error.message); }
+        } catch (error) { responses.unshift(...outgoing); failed = true; status.connected = false; onStatus(false); console.error(error.message); }
         await new Promise((r) => setTimeout(r, failed ? 1000 : responses.length ? 0 : 400));
       }
     }
