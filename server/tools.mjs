@@ -13,7 +13,7 @@ import { createNativeWire } from './native-wire.mjs';
 import { WIRE_CHUNK_CHARS } from '../src/wire-format.js';
 
 export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
-  const server = new McpServer({ name: 'canvy', version: '0.5.10' });
+  const server = new McpServer({ name: 'canvy', version: '0.5.11' });
   const catalog = addCompatibilityTools(server);
   const wire = createNativeWire();
   registerTools(server, { policy: { allowEval: false, disabledTools: ['open_file', 'save_file', 'new_document', 'list_documents'] }, mcpRoot: root, sendRPC: routedRPC });
@@ -92,7 +92,7 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
     if (connection.connection_state !== 'document_connected') return { ...connection, connected: false, ready: false };
     return { ...await sendRPC({ command: 'freecanvas_status', args }), ...connection };
   }, {}, true);
-  register('canvas_diagnostics', 'Inspect native panel attachment, loaded documents, interface versions, runtime limits, and the advertised public tool catalog. Does not require an open canvas. Opening requested is distinct from a connected document.', target, async args => ({ ...await diagnostics(args), ...await panels('list'), connector_version: '0.5.10', tool_profile: catalog.profile, registered_public_tools: catalog.filter(t => t.public).length, tools: catalog.filter(t => t.public && t.advertised) }), {}, true);
+  register('canvas_diagnostics', 'Inspect native panel attachment, loaded documents, interface versions, runtime limits, and the advertised public tool catalog. Does not require an open canvas. Opening requested is distinct from a connected document.', target, async args => ({ ...await diagnostics(args), ...await panels('list'), connector_version: '0.5.11', tool_profile: catalog.profile, registered_public_tools: catalog.filter(t => t.public).length, tools: catalog.filter(t => t.public && t.advertised) }), {}, true);
   register('export_jsx', 'Export a frame or selection to JSX with Tailwind classes. This is a design export, not a running React app.', { ...target, ids: v.array(v.string()) }, async (args) => routedRPC({ command: 'freecanvas_jsx', args }), {}, true);
   register('send_selection_to_chat', 'Read the selected nodes and a bounded context packet for a targeted change request.', target, async (args) => routedRPC({ command: 'freecanvas_context', args }), {}, true);
   const serviceRequest = createServiceClient(origin, { ensureService });

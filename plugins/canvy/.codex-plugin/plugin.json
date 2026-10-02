@@ -1,9 +1,20 @@
 {
   "name": "canvy",
-  "version": "0.5.10",
+  "version": "0.5.11",
   "description": "Edit local OpenPencil designs on a shared canvas from Codex.",
   "author": { "name": "Martí" },
   "skills": "./skills",
   "mcpServers": "./.mcp.json",
-  "interface": { "displayName": "Canvy", "shortDescription": "Local design canvas powered by OpenPencil", "category": "Creativity", "defaultPrompt": ["Open Canvy and create a design", "Modify the selected element in Canvy"] }
+  "interface": {
+    "displayName": "Canvy",
+    "shortDescription": "Local design canvas powered by OpenPencil",
+    "category": "Creativity",
+    "defaultPrompt": ["Open Canvy and create a design", "Modify the selected element in Canvy"],
+    "brandColor": "#168568",
+    "brandColorDark": "#8AD4BC",
+    "composerIcon": "./assets/icon.svg",
+    "composerIconDark": "./assets/icon-dark.svg",
+    "logo": "./assets/logo.svg",
+    "logoDark": "./assets/logo.svg"
+  }
 }

@@ -1,8 +1,18 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "canvy",
-  "version": "0.5.10",
+  "version": "0.5.11",
   "description": "Local OpenPencil design canvas for Codex",
   "license": "MIT",
-  "extensions": { "com.openai": { "interface": { "displayName": "Canvy", "shortDescription": "Minimal canvas for Codex", "category": "Creativity" } } }
+  "extensions": { "com.openai": { "interface": {
+    "displayName": "Canvy",
+    "shortDescription": "Minimal canvas for Codex",
+    "category": "Creativity",
+    "brandColor": "#168568",
+    "brandColorDark": "#8AD4BC",
+    "composerIcon": "./assets/icon.svg",
+    "composerIconDark": "./assets/icon-dark.svg",
+    "logo": "./assets/logo.svg",
+    "logoDark": "./assets/logo.svg"
+  } } }
 }

@@ -13,6 +13,7 @@ export async function configurePlugin({ marketplaceDirectory = marketplaceRoot, 
   const browserChannel = environment.CANVY_BROWSER_CHANNEL ?? previousEnvironment.CANVY_BROWSER_CHANNEL;
   await mkdir(resolve(destination, '.codex-plugin'), { recursive: true });
   await cp(resolve(source, 'skills'), resolve(destination, 'skills'), { recursive: true });
+  await cp(resolve(source, 'assets'), resolve(destination, 'assets'), { recursive: true });
   for (const file of ['plugin.json', '.codex-plugin/plugin.json']) {
     await cp(resolve(source, file), resolve(destination, file));
   }

@@ -1,5 +1,7 @@
 # Canvy
 
+<img src="plugins/canvy/assets/logo.svg" width="72" height="72" alt="Canvy logo: a canvas-shaped C with a cursor" />
+
 **An editable, local design canvas for agents — built for Codex, adaptable to other harnesses.**
 
 Canvy gives an agent a persistent canvas inside the Codex desktop app. The agent creates and edits real design nodes through MCP tools; the human reviews the work and moves mockups or individual elements. A minimal dark canvas keeps the design in focus. There are no layer or property sidebars, and completed edits save automatically to local disk.
@@ -73,6 +75,8 @@ npm run install:codex
 ```
 
 The installer builds the self-contained native resource, generates machine-specific configuration under `.local/`, adds that local marketplace, and installs **`canvy@canvy-local`**. The MCP server is named **`canvy`**. It uses the bare `node` executable with an absolute path to this checkout's `server/stdio.mjs`; no developer's personal path is committed.
+
+The package includes a custom canvas-and-cursor mark, with light and dark composer icons and a listing logo. Branding assets live in `plugins/canvy/assets`; both manifest formats declare them, and configuration copies them into the installed package. Codex may retain an older icon until its plugin metadata refreshes or the app is reopened. Plugin metadata, connector, backend and loaded UI releases are reported separately; a branding-only update does not require restarting a live canvas backend.
 
 In Codex, select **Canvy** from the plugin picker or global entrypoint, then ask:
 
