@@ -6,6 +6,8 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import { resolve, dirname, extname, relative, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { collectFrontend } from './frontend-snapshot.mjs';
+import { captureRasterLayers } from './frontend-raster.mjs';
+import { installPrototypeAssets } from '../src/prototype-assets.js';
 
 const checkout = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const mime = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.otf': 'font/otf', '.woff': 'font/woff', '.woff2': 'font/woff2' };
@@ -66,8 +68,8 @@ export async function compileFrontend(input) {
   const script = bundle.outputFiles.find(f => f.path.endsWith('.js')).text;
   // No bridge credentials or host APIs are included in this document. React is
   // run in an isolated browser for capture and an opaque iframe for preview.
-  const csp = `default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'`;
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>html,body{margin:0}</style><style>${escapeStyle(styles)}</style></head><body><div id="canvy-root"></div><script>${escapeScript(script)}</script></body></html>`;
+  const csp = `default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data: blob:; connect-src 'none'; frame-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>html,body{margin:0}</style><style>${escapeStyle(styles)}</style></head><body><script>(${installPrototypeAssets.toString()})();</script><div id="canvy-root"></div><script>${escapeScript(script)}</script></body></html>`;
   if (Buffer.byteLength(html) > 4 * 1024 * 1024) throw new Error('Compiled prototype exceeds 4 MiB; reduce its bundled assets');
   async function asset(path) {
     const local = safePath(decodeURIComponent(path.replace(/^\/+/, '')));
@@ -127,6 +129,7 @@ export async function captureFrontend(input, { onCapture } = {}) {
         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       });
       const snapshot = await page.evaluate(collectFrontend, { selector: input.selector ?? '#canvy-root', maxNodes: 2000 });
+      await captureRasterLayers(page, snapshot);
       for (const resource of snapshot.assets) {
         if (resource.url?.startsWith('http://canvy-import.local')) { const url = new URL(resource.url); resource.data = capturedAssets.get(url.pathname + url.search) ?? null; }
       }

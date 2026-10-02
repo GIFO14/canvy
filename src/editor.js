@@ -215,8 +215,8 @@ export async function runRPC({ command, args = {} }) {
     const imports = editor.graph.canvyResources?.imports ?? {};
     const entry = imports[args.import_id];
     if (!entry) throw new Error('Unknown frontend import');
-    const { html, originals, ...report } = entry;
-    return { import_id: args.import_id, ...report, original_svgs: originals.length, original_fonts: Object.values(editor.graph.canvyResources.fonts).map(({data, ...font}) => font) };
+    const { html, originals, assets, ...report } = entry;
+    return { import_id: args.import_id, ...report, original_assets: (assets ?? []).map(({ data, ...asset }) => ({ ...asset, available: Boolean(data) })), original_svgs: originals.length, original_fonts: Object.values(editor.graph.canvyResources.fonts).map(({data, ...font}) => font) };
   }
   if (command === 'canvy_preview_import') { const result = openPreview(editor.graph, args); return { ...result, opening_requested: true }; }
   if (command === 'canvy_preview_action') return previewAction(args);

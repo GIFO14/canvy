@@ -7,8 +7,10 @@ import { createServer } from 'node:net';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { nativeHarness } from './native-harness.mjs';
 import { source, css, badge } from './frontend-fixture.mjs';
+import { source as effectsSource, css as effectsCss } from './frontend-effects-fixture.mjs';
 import { captureFrontend, compileFrontend } from '../server/frontend-import.mjs';
 import { decodeDocument } from '../src/document-state.js';
+import { parseFigBuffer } from '@open-pencil/fig';
 
 await mkdir('.runtime', { recursive: true });
 const data = await mkdtemp(resolve('.runtime/frontend-qa-'));
@@ -30,10 +32,13 @@ const checks = [];
 try {
   for (let n = 0; n < 100; n++) { if (await fetch(origin + '/health').then(r => r.ok, () => false)) break; await new Promise(r => setTimeout(r, 50)); }
   await client.connect(new StreamableHTTPClientTransport(new URL(origin + '/mcp')));
-  host = await nativeHarness(client, origin);
+  host = await nativeHarness(client, origin, undefined, { nonceCsp: true });
   const document = (await call('create_canvas', { name: 'Frontend import QA' })).document;
   const target = { document_id: document.id };
-  const panel = await host.addPanel(document.id);
+  const panel = await host.addPanel(document.id, { collapsed: true });
+  assert.equal(await panel.surface.getByTestId('design-canvas').evaluate(e => e.clientWidth), 0);
+  assert.deepEqual(await panel.surface.getByTestId('design-canvas').evaluate(e => ({ width: e.width, height: e.height, ready: e.dataset.ready })), { width: 800, height: 600, ready: '1' });
+  checks.push('Collapsed zero-size native app initializes and attaches without RAF');
   const references = [];
   const captured = await captureFrontend(input, { onCapture: async (page, viewport) => {
     const png = await page.locator('#canvy-root').screenshot(); references.push(png.toString('base64'));
@@ -69,7 +74,7 @@ try {
     await writeFile(`artifacts/frontend-editable-${frame.viewport.width}.png`, Buffer.from(exported.data, 'base64'));
     const comparison = await host.page.evaluate(async ({ reference, native }) => {
       const pixels = async base64 => {
-        const img = new Image(); img.src = 'data:image/png;base64,' + base64; await img.decode();
+        const img = new Image(); const url = URL.createObjectURL(new Blob([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], { type: 'image/png' })); img.src = url; await img.decode(); URL.revokeObjectURL(url);
         const canvas = document.createElement('canvas'); canvas.width = img.width; canvas.height = img.height;
         canvas.getContext('2d').drawImage(img, 0, 0); return { width: img.width, height: img.height, data: canvas.getContext('2d').getImageData(0, 0, img.width, img.height).data };
       };
@@ -99,6 +104,13 @@ try {
   assert.match(opened.text, /Payment details/);
   const filled = await call('canvas_preview_action', { ...target, action: 'fill', selector: 'input', value: 'LOCAL-123' });
   assert.ok(filled.controls.some(n => n.value === 'LOCAL-123'));
+  checks.push('Import, export, autosave and React actions succeed in a collapsed panel');
+  await host.page.locator('#' + panel.id).evaluate(e => { e.style.width = '100%'; e.style.height = '100%'; });
+  await panel.surface.getByTestId('design-canvas').evaluate(async e => {
+    const deadline = Date.now() + 5000;
+    while (e.width !== e.clientWidth * devicePixelRatio && Date.now() < deadline) await new Promise(r => setTimeout(r, 25));
+  });
+  assert.equal(await panel.surface.getByTestId('design-canvas').evaluate(e => e.width), 1200);
   await panel.surface.frameLocator('iframe[title="Imported React prototype"]').getByRole('button', { name: 'Close', exact: true }).click();
   const closed = await call('canvas_preview_action', { ...target, action: 'snapshot' });
   assert.ok(!closed.controls.some(n => n.role === 'dialog'));
@@ -112,6 +124,8 @@ try {
   await host.page.screenshot({ path: 'artifacts/frontend-interactive.png' });
   await call('canvas_preview_action', { ...target, action: 'close' });
   checks.push('Original React modal and form interactions run inside opaque native-app preview', 'Child frame cannot read host bridge or forward MCP messages');
+  checks.push('Inherited nonce-only script CSP permits the bundled prototype');
+  checks.push('Expanded host viewport replaces the collapsed backing-buffer dimensions');
   await call('switch_canvas', {});
   await call('switch_canvas', target);
   const restored = await call('canvas_get_import_report', { ...target, import_id: imported.import_id });
@@ -120,16 +134,58 @@ try {
   assert.match((await call('canvas_preview_action', { ...target, action: 'snapshot' })).text, /Reservations/);
   await call('canvas_preview_action', { ...target, action: 'close' });
   checks.push('Saved prototype and stable editable IDs survive unload/reload');
-  await host.close(); host = await nativeHarness(client, origin);
+  await host.close(); host = await nativeHarness(client, origin, undefined, { nonceCsp: true });
   await host.addPanel(document.id);
   const reopened = await call('canvas_get_import_report', { ...target, import_id: imported.import_id });
   assert.equal(reopened.frames[0].id, mobile.id);
   const fontStatus = await call('get_font_status', target);
   assert.equal(fontStatus.faithful, true, 'Original font faces must reload in a fresh editor');
   checks.push('Fresh editor process reloads persisted imported resources');
+  const effectsInput = { source: effectsSource, css: effectsCss, files, viewports: [{ width: 400, height: 800 }], name: 'Browser effects' };
+  let effectsReference;
+  const effectCapture = await captureFrontend(effectsInput, { onCapture: async page => {
+    effectsReference = (await page.locator('#canvy-root').screenshot()).toString('base64');
+    await writeFile('artifacts/frontend-effects-reference.png', Buffer.from(effectsReference, 'base64'));
+  } });
+  const effectImport = await call('canvas_import_react', { ...target, ...effectsInput });
+  const effectFrame = effectImport.frames[0], effectNodes = effectCapture.variants[0].nodes;
+  graph = await checkpoint();
+  const fig = await readFile(resolve(data, 'canvases', document.id + '.fig'));
+  const figPayload = parseFigBuffer(fig.buffer.slice(fig.byteOffset, fig.byteOffset + fig.byteLength));
+  assert.ok(figPayload.nodeChanges.some(n => n.fillPaints?.some(p => p.imageScaleMode === 'STRETCH' && p.transform)), 'Transformed image fills must serialize as valid interoperable .fig paints');
+  assert.ok(graph.getNode(effectFrame.node_map[effectNodes.find(n => n.name === 'gradient').key]).fills.some(f => f.type === 'GRADIENT_LINEAR'));
+  assert.ok(effectNodes.filter(n => n.type === 'text' && n.parent === effectNodes.find(n => n.name === 'wrapped').key).length >= 3);
+  const pattern = graph.getNode(effectFrame.node_map[effectNodes.find(n => n.name === 'pattern').key]);
+  assert.ok(pattern.childIds.some(id => graph.getNode(id).fills.some(f => f.type === 'IMAGE')));
+  assert.ok(pattern.childIds.some(id => graph.getNode(id).type === 'TEXT' && graph.getNode(id).visible));
+  const rotated = graph.getNode(effectFrame.node_map[effectNodes.find(n => n.name === 'rotated').key]);
+  assert.ok(rotated.childIds.some(id => graph.getNode(id).type === 'TEXT' && !graph.getNode(id).visible));
+  const overlap = graph.getNode(effectFrame.node_map[effectNodes.find(n => n.name === 'overlap').key]);
+  assert.deepEqual(overlap.childIds.map(id => graph.getNode(id).name), ['below', 'above']);
+  assert.ok(effectFrame.visual_layers.some(n => n.mode === 'decoration'));
+  assert.ok(effectFrame.visual_layers.some(n => n.mode === 'composite'));
+  const effectExport = await call('export_image', { ...target, ids: [effectFrame.id], format: 'PNG', scale: 1, maxEdge: 2000 });
+  await writeFile('artifacts/frontend-effects-editable.png', Buffer.from(effectExport.data, 'base64'));
+  const effectsVisual = await host.page.evaluate(async ({ a, b }) => {
+    const pixels = async data => { const img = new Image(); const url = URL.createObjectURL(new Blob([Uint8Array.from(atob(data), c => c.charCodeAt(0))], { type: 'image/png' })); img.src = url; await img.decode(); URL.revokeObjectURL(url); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); return { w: c.width, h: c.height, data: c.getContext('2d').getImageData(0, 0, c.width, c.height).data }; };
+    const source = await pixels(a), native = await pixels(b); let error = 0;
+    if (source.w !== native.w || source.h !== native.h) return { dimensions: false, source: [source.w, source.h], native: [native.w, native.h] };
+    for (let i = 0; i < source.data.length; i++) error += Math.abs(source.data[i] - native.data[i]);
+    return { dimensions: true, meanAbsoluteChannelError: error / source.data.length / 255 };
+  }, { a: effectsReference, b: effectExport.data });
+  assert.equal(effectsVisual.dimensions, true, JSON.stringify(effectsVisual));
+  assert.ok(effectsVisual.meanAbsoluteChannelError < 0.035, JSON.stringify(effectsVisual));
+  const patternText = effectNodes.find(n => n.text === 'Original background image');
+  await call('canvas_set_text', { ...target, id: effectFrame.node_map[patternText.key], text: 'Editable over decoration' });
+  await call('switch_canvas', {}); await call('switch_canvas', target);
+  const effectsReport = await call('canvas_get_import_report', { ...target, import_id: effectImport.import_id });
+  assert.deepEqual(effectsReport.frames[0].visual_layers, effectFrame.visual_layers);
+  checks.push('Native gradients, editable browser line fragments and sibling stacking order', 'Background images, generated content, form chrome, transformed subtrees and complex SVGs retain disclosed visual layers', 'Editable text over raster decorations and visual-layer reports survive autosave and reload');
   const unsupported = await captureFrontend({ source: 'export default()=> <div style={{padding:20,backgroundImage:"linear-gradient(red,blue)",filter:"blur(1px)"}}>Unsupported effects<img src="https://example.invalid/private.png"/></div>' });
   const issues = unsupported.variants[0].issues;
-  assert.ok(issues.some(i => i.code === 'BACKGROUND_IMAGE')); assert.ok(issues.some(i => i.code === 'FILTER')); assert.ok(issues.some(i => i.code === 'CSP_BLOCKED_RESOURCE'));
+  assert.ok(unsupported.variants[0].nodes.some(n => n.backgroundPaint?.type === 'GRADIENT_LINEAR'));
+  assert.ok(unsupported.variants[0].nodes.some(n => n.effects.some(e => e.type === 'LAYER_BLUR')));
+  assert.ok(issues.some(i => i.code === 'CSP_BLOCKED_RESOURCE'));
   await assert.rejects(compileFrontend({ source, files: [{ path: '../escape.ts', content: '' }] }), /relative/);
   const nested = await compileFrontend({ entry: 'ui/Screen.tsx', files: [{ path: 'ui/Screen.tsx', content: "import styles from './styles.module.css'; export default()=> <div className={styles.card}>CSS modules</div>" }, { path: 'ui/styles.module.css', content: '.card{padding:12px;color:red}' }] });
   assert.match(nested.html, /CSS modules/);
@@ -146,6 +202,6 @@ try {
   checks.push('Unsupported effects and blocked network assets are reported', 'Relative path traversal rejected', 'Nested virtual sources and CSS modules compile');
   await host.page.screenshot({ path: 'artifacts/frontend-native-nodes.png' });
   assert.deepEqual(host.errors, []);
-  await writeFile('artifacts/frontend-test.json', JSON.stringify({ status: 'PASS', host: 'OPAQUE MCP APP PROTOCOL HARNESS, NOT ACTUAL CODEX DESKTOP', checks, variants: imported.frames.map(f => f.viewport), visual, warnings: imported.warning_count }, null, 2));
+  await writeFile('artifacts/frontend-test.json', JSON.stringify({ status: 'PASS', host: 'OPAQUE MCP APP PROTOCOL HARNESS, NOT ACTUAL CODEX DESKTOP', checks, variants: imported.frames.map(f => f.viewport), visual, effectsVisual, warnings: imported.warning_count }, null, 2));
   console.log('PASS React import, editable geometry/assets, responsive variants, persisted opaque prototype and typed interactions');
 } finally { await host?.close(); await client.close(); service.kill(); }

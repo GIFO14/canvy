@@ -37,6 +37,10 @@ Use `canvas_import_react` for actual React/CSS, not `canvas_render`. Supply a de
 
 ## Persistence and recovery
 
+Read each import's `visual_layers`. Linear gradients, line fragments and ordinary sibling stacking convert natively. Browser-only decorations use raster layers under editable text/children. Complex composites preserve a visual with an editable subtree hidden where possible; original React/CSS/SVG stays in the checkpoint. Hidden edits do not regenerate a composite: reimport changed source. Disclose this distinction instead of calling raster effects editable. Compare exports against the actual frontend, including cross-ancestor stacking, overflowing effects and font variation/shaping.
+
+Version 0.5.1 can initialize, edit, export and run typed prototype actions in a collapsed zero-size native panel; it uses a positive backing buffer and bounded animation-frame waits. After upgrading, a previously mounted panel retains its old code until reopened. Confirm the live UI version separately from connector discovery.
+
 Completed edits autosave; agent edit acknowledgements wait for persistence. No Save button is required. Normal close or document switching commits active text editing and flushes writes. Failed saves remain visibly unsaved and retry. An uncommitted input gesture is not guaranteed to survive abrupt process/OS termination.
 
 The data directory defaults to `<checkout>/.runtime`; override it with `CANVY_DATA_DIR`. `canvases.json` stores the catalog. Checkpoints are `canvases/<document_id>.freecanvas` plus `.fig` backups. The original document remains `document.freecanvas`/`document.fig`. Legacy extensions and internal FreeCanvas identifiers preserve compatibility. Never delete these files when updating or installing plugins.

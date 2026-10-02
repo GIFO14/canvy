@@ -1,6 +1,6 @@
 import { chromium } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
-export async function nativeHarness(client, origin, viewport = { width: 1200, height: 900 }, { interceptTool } = {}) {
+export async function nativeHarness(client, origin, viewport = { width: 1200, height: 900 }, { interceptTool, nonceCsp = false } = {}) {
   await mkdir('artifacts', { recursive: true });
   const browser = await chromium.launch({ headless: true, ...(process.env.CANVY_BROWSER_CHANNEL ? { channel: process.env.CANVY_BROWSER_CHANNEL } : {}) });
   const page = await browser.newPage({ viewport, locale: 'es-ES' });
@@ -15,7 +15,9 @@ export async function nativeHarness(client, origin, viewport = { width: 1200, he
   const tools = await client.listTools();
   const uri = tools.tools.find(tool => tool.name === 'open_canvas')._meta.ui.resourceUri;
   const resource = await client.readResource({ uri });
-  await page.route(origin + '/native-test', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><html><style>html,body{margin:0;height:100%;background:#2b2b2b}iframe{width:100%;height:100%;border:0;position:absolute;inset:0}</style><body><script>
+  const nonce = 'canvy-native-qa';
+  const csp = "default-src 'none'; script-src 'nonce-" + nonce + "' blob: 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src blob:; font-src blob:; connect-src 'none'; frame-src 'self' blob:; worker-src blob:";
+  await page.route(origin + '/native-test', route => route.fulfill({ contentType: 'text/html', ...(nonceCsp ? { headers: { 'Content-Security-Policy': csp } } : {}), body: `<!doctype html><html><style>html,body{margin:0;height:100%;background:#2b2b2b}iframe{width:100%;height:100%;border:0;position:absolute;inset:0}</style><body><script nonce="${nonce}">
     window.nativeMessages=[];
     window.addEventListener('message',async e=>{
       const frame=[...document.querySelectorAll('iframe')].find(f=>f.contentWindow===e.source);
@@ -32,17 +34,18 @@ export async function nativeHarness(client, origin, viewport = { width: 1200, he
   </script></body></html>` }));
   await page.goto(origin + '/native-test');
   let count = 0;
-  async function addPanel(document_id) {
+  async function addPanel(document_id, { collapsed = false } = {}) {
     const id = `canvas${++count}`;
-    await page.evaluate(({ id, html, document_id }) => {
+    await page.evaluate(({ id, html, document_id, collapsed }) => {
       for (const frame of document.querySelectorAll('iframe')) frame.style.visibility = 'hidden';
       const frame = document.createElement('iframe'); frame.id = id;
+      if (collapsed) { frame.style.width = '0px'; frame.style.height = '0px'; }
       frame.setAttribute('sandbox', 'allow-scripts allow-forms');
       if (document_id) frame.dataset.document = document_id;
       frame.srcdoc = html; document.body.append(frame);
-    }, { id, html: resource.contents[0].text, document_id });
+    }, { id, html: nonceCsp ? resource.contents[0].text.replace('<script>', `<script nonce="${nonce}">`) : resource.contents[0].text, document_id, collapsed });
     const surface = page.frameLocator('#' + id);
-    await surface.locator('main[data-connected="true"][data-ready="true"]').waitFor();
+    await surface.locator('main[data-connected="true"][data-ready="true"]').waitFor({ state: 'attached' });
     return { id, surface };
   }
   async function show(id) { await page.evaluate(id => { for (const frame of document.querySelectorAll('iframe')) frame.style.visibility = frame.id === id ? 'visible' : 'hidden'; }, id); }

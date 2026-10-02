@@ -15,7 +15,7 @@ export function createPanelNavigator(native) {
   }
   async function bootstrap(args) {
     const result = await native('bootstrap', args);
-    observe(result.session, { document_id: result.document?.id ?? null, navigation: ['0.3.4', '0.3.5', '0.3.6', '0.3.7', '0.4.0', '0.4.1', '0.5.0'].includes(args.ui_version), ui_version: args.ui_version });
+    observe(result.session, { document_id: result.document?.id ?? null, navigation: ['0.3.4', '0.3.5', '0.3.6', '0.3.7', '0.4.0', '0.4.1', '0.5.0', '0.5.1'].includes(args.ui_version), ui_version: args.ui_version });
     if (args.previous_session && panels.has(args.previous_session)) {
       for (const job of jobs.values()) if (job.panel_id === args.previous_session) job.panel_id = result.session;
       panels.delete(args.previous_session);

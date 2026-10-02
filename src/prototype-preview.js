@@ -1,9 +1,16 @@
+import { installPrototypeAssets } from './prototype-assets.js';
 import { reactive } from 'vue';
 export const preview = reactive({ current: null, ready: false, error: '' });
 let frame, pending = new Map(), listener;
 // This function executes only inside the opaque, script-only prototype frame.
 function childBridge() {
   const channel = 'canvy-prototype-v1';
+  const settle = () => new Promise(resolve => {
+    // React commits also happen in collapsed native panels where RAF may stop.
+    const timer = setTimeout(done, 100); let first, second;
+    function done() { clearTimeout(timer); cancelAnimationFrame(first); cancelAnimationFrame(second); resolve(); }
+    first = requestAnimationFrame(() => { second = requestAnimationFrame(done); });
+  });
   const snapshot = () => ({ text: document.body.innerText.slice(0, 20000), controls: [...document.querySelectorAll('button,input,select,textarea,[role=dialog],a')].slice(0, 100).map(e => ({ tag: e.tagName.toLowerCase(), id: e.id, role: e.getAttribute('role'), label: e.getAttribute('aria-label') || e.textContent?.slice(0, 100), value: 'value' in e ? e.value : undefined })) });
   addEventListener('message', async event => {
     const data = event.data;
@@ -20,16 +27,23 @@ function childBridge() {
           setter.call(node, value ?? ''); node.dispatchEvent(new Event('input', { bubbles: true })); node.dispatchEvent(new Event('change', { bubbles: true }));
         }
       } else if (action !== 'snapshot') throw new Error('Unsupported preview action');
-      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      await settle();
       parent.postMessage({ channel, id: data.id, result: snapshot() }, '*');
     } catch (error) { parent.postMessage({ channel, id: data.id, error: error.message }, '*'); }
   });
   addEventListener('error', event => parent.postMessage({ channel, error: event.message }, '*'));
   addEventListener('securitypolicyviolation', event => parent.postMessage({ channel, warning: `Blocked prototype resource: ${event.violatedDirective}` }, '*'));
-  addEventListener('load', async () => { await document.fonts.ready; await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); parent.postMessage({ channel, ready: true }, '*'); });
+  addEventListener('load', async () => { await document.fonts.ready; await settle(); parent.postMessage({ channel, ready: true }, '*'); });
 }
 export function previewHtml(html) {
-  return html.replace('</body>', `<script>(${childBridge.toString()})();</script></body>`);
+  const bundled = html.replace("font-src data:", "font-src data: blob:").replace('<body>', `<body><script>(${installPrototypeAssets.toString()})();(${childBridge.toString()})();</script>`);
+  // Blob documents inherit the native host's nonce policy. Their own CSP cannot
+  // relax it. Carry the host nonce into the original bundle and bridge scripts.
+  const nonce = document.querySelector('script[nonce]')?.nonce;
+  if (!nonce) return bundled;
+  const documentCopy = new DOMParser().parseFromString(bundled, 'text/html');
+  for (const script of documentCopy.querySelectorAll('script')) script.setAttribute('nonce', nonce);
+  return '<!doctype html>' + documentCopy.documentElement.outerHTML;
 }
 export function attachPreview(element) {
   frame = element;

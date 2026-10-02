@@ -11,7 +11,7 @@ import { createPanelNavigator } from './panel-navigation.mjs';
 import { captureFrontend } from './frontend-import.mjs';
 
 export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
-  const server = new McpServer({ name: 'canvy', version: '0.5.0' });
+  const server = new McpServer({ name: 'canvy', version: '0.5.1' });
   const catalog = addCompatibilityTools(server);
   registerTools(server, { policy: { allowEval: false, disabledTools: ['open_file', 'save_file', 'new_document', 'list_documents'] }, mcpRoot: root, sendRPC: routedRPC });
   const register = (name, description, entries, handler, meta = {}, readOnly = false) => server.registerTool(name, {
@@ -25,7 +25,7 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
       return { isError: true, content: [{ type: 'text', text: error.message }] };
     }
   });
-  const uri = 'ui://canvy/canvas/v2';
+  const uri = 'ui://canvy/canvas/v3';
   const openMetadata = OpenAIUiToolMetadataSchema.parse({ entrypoints: [{ type: 'thread' }, { type: 'global' }], preferredModelDisplayMode: 'fullscreen' });
   const resourceMetadata = OpenAIUiResourceMetadataSchema.parse({ preferredDisplayMode: 'fullscreen', availableDisplayModes: ['fullscreen', 'pip'] });
   function registerCanvasResource(resourceUri, name) {
@@ -40,6 +40,7 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
   });
   }
   registerCanvasResource(uri, 'canvy-canvas');
+  registerCanvasResource('ui://canvy/canvas/v2', 'canvy-canvas-v2');
   registerCanvasResource('ui://canvy/canvas/v1', 'canvy-canvas-v1');
   registerCanvasResource('ui://freecanvas/canvas/v11', 'freecanvas-canvas-v11');
   registerCanvasResource('ui://freecanvas/canvas/v10', 'freecanvas-canvas-v10');
@@ -81,7 +82,7 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
     if (connection.connection_state !== 'document_connected') return { ...connection, connected: false, ready: false };
     return { ...await sendRPC({ command: 'freecanvas_status', args }), ...connection };
   }, {}, true);
-  register('canvas_diagnostics', 'Inspect native panel attachment, loaded documents, interface versions, runtime limits, and the advertised public tool catalog. Does not require an open canvas. Opening requested is distinct from a connected document.', target, async args => ({ ...await diagnostics(args), ...await panels('list'), connector_version: '0.5.0', tool_profile: catalog.profile, registered_public_tools: catalog.filter(t => t.public).length, tools: catalog.filter(t => t.public && t.advertised) }), {}, true);
+  register('canvas_diagnostics', 'Inspect native panel attachment, loaded documents, interface versions, runtime limits, and the advertised public tool catalog. Does not require an open canvas. Opening requested is distinct from a connected document.', target, async args => ({ ...await diagnostics(args), ...await panels('list'), connector_version: '0.5.1', tool_profile: catalog.profile, registered_public_tools: catalog.filter(t => t.public).length, tools: catalog.filter(t => t.public && t.advertised) }), {}, true);
   register('export_jsx', 'Export a frame or selection to JSX with Tailwind classes. This is a design export, not a running React app.', { ...target, ids: v.array(v.string()) }, async (args) => routedRPC({ command: 'freecanvas_jsx', args }), {}, true);
   register('send_selection_to_chat', 'Read the selected nodes and a bounded context packet for a targeted change request.', target, async (args) => routedRPC({ command: 'freecanvas_context', args }), {}, true);
   const serviceRequest = createServiceClient(origin, { ensureService });
@@ -121,11 +122,11 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
     if (response.status === 404) {
       try {
         const live = await sendRPC({ command: 'freecanvas_status', args });
-        return { version: '0.5.0', service_compatibility: '0.3.0', connection_state: 'document_connected', document_id: live.document_id, open_documents: [live.document_id], requested_document_connected: true, guidance: null, live_status: live };
+        return { version: '0.5.1', service_compatibility: '0.3.0', connection_state: 'document_connected', document_id: live.document_id, open_documents: [live.document_id], requested_document_connected: true, guidance: null, live_status: live };
       } catch (error) {
         const ambiguous = /Multiple canvases/.test(error.message);
         const state = ambiguous ? 'multiple_documents_connected' : /disconnected/.test(error.message) ? 'panel_not_connected' : 'connection_error';
-        return { version: '0.5.0', service_compatibility: '0.3.0', connection_state: state, document_id: args.document_id ?? null, requested_document_connected: false, guidance: ambiguous ? 'Specify document_id.' : error.message };
+        return { version: '0.5.1', service_compatibility: '0.3.0', connection_state: state, document_id: args.document_id ?? null, requested_document_connected: false, guidance: ambiguous ? 'Specify document_id.' : error.message };
       }
     }
     const result = await response.json(); if (!response.ok) throw new Error(result.error ?? 'Connection diagnostics unavailable'); return result;
