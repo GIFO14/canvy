@@ -119,7 +119,7 @@ try {
   const closed = await call('canvas_preview_action', { ...target, action: 'snapshot' });
   assert.ok(!closed.controls.some(n => n.role === 'dialog'));
   // The opaque child must not access the native parent or its host bridge.
-  const child = host.page.frames().find(f => f.url().startsWith('blob:'));
+  const child = await (await panel.surface.locator('iframe[title="Imported React prototype"]').elementHandle()).contentFrame();
   assert.ok(await child.evaluate(() => [...document.images].every(img => img.complete && img.naturalWidth > 0)), 'Original preview images must decode without the backend');
   assert.ok(await child.evaluate(() => document.fonts.check('16px Fixture')), 'Original preview font must be available offline');
   assert.equal(await child.evaluate(() => { try { return Boolean(parent.__FREECANVAS_NATIVE_HOST__); } catch { return false; } }), false);

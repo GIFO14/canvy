@@ -1,6 +1,6 @@
 {
   "name": "canvy",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "Edit local OpenPencil designs on a shared canvas from Codex.",
   "author": { "name": "Martí" },
   "skills": "./skills",

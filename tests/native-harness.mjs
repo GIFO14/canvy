@@ -34,7 +34,7 @@ export async function nativeHarness(client, origin, viewport = { width: 1200, he
   </script></body></html>` }));
   await page.goto(origin + '/native-test');
   let count = 0;
-  async function addPanel(document_id, { collapsed = false } = {}) {
+  async function addPanel(document_id, { collapsed = false, visualEdits = false } = {}) {
     const id = `canvas${++count}`;
     await page.evaluate(({ id, html, document_id, collapsed }) => {
       for (const frame of document.querySelectorAll('iframe')) frame.style.visibility = 'hidden';
@@ -46,6 +46,7 @@ export async function nativeHarness(client, origin, viewport = { width: 1200, he
     }, { id, html: nonceCsp ? resource.contents[0].text.replace('<script>', `<script nonce="${nonce}">`) : resource.contents[0].text, document_id, collapsed });
     const surface = page.frameLocator('#' + id);
     await surface.locator('main[data-connected="true"][data-ready="true"]').waitFor({ state: 'attached' });
+    if (visualEdits) { await surface.getByRole('button', { name: 'Visual edits', exact: true }).click(); await surface.locator('main[data-mode="visual"]').waitFor(); }
     return { id, surface };
   }
   async function show(id) { await page.evaluate(id => { for (const frame of document.querySelectorAll('iframe')) frame.style.visibility = frame.id === id ? 'visible' : 'hidden'; }, id); }

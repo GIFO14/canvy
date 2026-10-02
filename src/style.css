@@ -7,7 +7,9 @@ button:focus-visible{outline:2px solid #4aa080;outline-offset:3px}
 .canvas-shell{height:100%;position:relative;overflow:hidden;background:#2b2b2b}
 .canvas{width:100%;height:100%;display:block;outline:none}
 textarea[aria-hidden="true"]{position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none}
-.canvas-tools{position:absolute;top:18px;left:11px;width:46px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 5px;background:#242424;border:1px solid #393939;border-radius:10px}
+.canvas-tools{position:absolute;z-index:20;top:18px;left:11px;width:46px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 5px;background:#242424;border:1px solid #393939;border-radius:10px}
+.mode-control{position:absolute;z-index:60;left:70px;top:18px;display:flex;gap:3px;padding:4px;background:#242424;border:1px solid #393939;border-radius:9px}.mode-control button{padding:7px 12px;border-radius:5px;color:#aaa}.mode-control button[aria-pressed=true]{background:#1b3b2a;color:#b6d3c1}
+.zoom-control,.selection-action,.toast{z-index:20}
 .canvas-tools button{width:34px;height:34px;border-radius:6px;display:grid;place-items:center;padding:0}
 .canvas-tools button.active{background:#1b3b2a;color:#9dc5ae}.tool-divider{width:22px;height:1px;background:#393939;margin:5px 0}
 .zoom-control{position:absolute;left:11px;bottom:15px;display:flex;align-items:center;height:33px;border:1px solid #414141;border-radius:8px;padding:0;overflow:hidden;background:#2b2b2b;color:#eee;font-weight:600;font-size:12px}

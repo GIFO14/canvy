@@ -74,6 +74,8 @@ try {
   assert.equal((await call('list_open_canvases')).panels[0].document_id, a.id);
   failPersistence = false;
   await panel.surface.locator('main[data-saved="true"][data-save-error="false"]').waitFor();
+  await panel.surface.getByRole('button', { name: 'Visual edits', exact: true }).click();
+  await panel.surface.locator('main[data-mode="visual"]').waitFor();
   await call('canvas_viewport_zoom_to_fit', { document_id: a.id, ids: [shape.id] });
   const view = await call('canvas_viewport_get', { document_id: a.id });
   const box = await panel.surface.getByTestId('design-canvas').boundingBox();

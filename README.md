@@ -17,15 +17,25 @@ Canvy is an independent MIT-licensed integration built on [OpenPencil](https://g
 | React frontend import | Render a component with real CSS in local Chromium, then convert computed geometry to editable native nodes. |
 | Responsive variants | Capture up to four viewport sizes; actual browser media queries and Tailwind breakpoints determine each layout. |
 | Original assets | Persist captured SVG markup, image bytes, font bytes, prototype and conversion report with the document. |
-| Interactive preview | Run the original bundled React component offline in an isolated preview inside the native canvas panel. |
+| Interaction mode | Default **Interact** mode runs imported React mockups directly on the canvas; click menus, tabs and modals. |
 | Multiple canvases | Home lists, creates and renames saved documents. Different documents can be open in separate panels. |
 | Automatic persistence | Agent edit acknowledgements wait for local persistence. No Save button. |
-| Human review | Drag elements; hold **Space + left-button drag** to pan; use fit, zoom and undo. |
+| Visual edits | Switch to **Visual edits** to select, drag and edit native elements. Hold **Space + left-button drag** to pan in either mode. |
 | Agent continuation | Explicit document targets can navigate an existing panel after a human changes canvases. |
 | Recovery | Stopped backends start on demand; expired UI sessions reattach without replaying uncertain edits. |
 | Exports | Images, SVG, design JSX, and an interoperable `.fig` backup. |
 
 Canvy imports browser-rendered React screens and keeps a separate interactive copy of their original source bundle. Native node edits do not rewrite that source or its interactions. It does not provide cloud sharing or cross-device synchronization. Design reads and edits need a connected editor; the backend alone is not a headless design renderer.
+
+## Review and edit modes
+
+New panels start in **Interact**. Visible imported React frames run their original component directly at the frame's position, size and canvas zoom. Click a button to open its menu or modal, type in fields, and test local React state. The component must implement those interactions; a static screenshot or native-only design does not acquire behavior automatically.
+
+Choose **Visual edits** in the compact top-left control to work with native nodes instead. Select or move mockups and their contents, edit text, and use undo. Completed design edits still save automatically. Agent tools can edit native nodes in either mode; the switch governs human pointer and keyboard input.
+
+Hold **Space + left-button drag** to move around the canvas in either mode, including when a React mockup has focus. Spaces inside text fields remain ordinary input. The Pan tool also moves the canvas; release it with the mode control. **V** selects Visual edits; **H** selects Pan when the editor has focus.
+
+Changing modes preserves an onscreen prototype's transient state. Offscreen frames are unloaded to avoid running every prototype on a large board; returning to them, switching documents or reopening a panel resets that state. Original code and resources persist locally, while open menus and form values are not design edits or saved application data. Native content edits remain separate from the original React source: return to Interact to test that source, or reimport revised React to update its behavior. Frame movement and dimensions determine where and at what viewport size the prototype appears.
 
 ## Install in Codex
 
@@ -86,6 +96,8 @@ npm run install:codex
 ```
 
 Keep Node on the desktop app's `PATH`. If moving the checkout, rerun configuration and installation from its new location. Preserve the data directory during updates or uninstalling. The chosen browser channel survives reconfiguration; explicitly set `CANVY_BROWSER_CHANNEL` to change it, or set it to an empty string to return to Playwright Chromium. Compatible live backends are retained to avoid interrupting panels, so diagnostics may report a newer connector than backend.
+
+`canvas_status.ui_release` reports the actual loaded UI release. Panel `ui_version` reports the compatible bridge ABI; release 0.5.5 retains ABI 0.5.4 to work with a live older backend while introducing the two review modes.
 
 On Windows, reinstalling the same plugin version can fail with a cache backup or access-denied error while Codex holds its installed files open. Quit the desktop app and other sessions using that plugin, then rerun the installer from an external terminal. Do not delete the data directory: documents are separate from the plugin cache.
 
@@ -150,7 +162,7 @@ Alternatively supply `source: "export default function Screen() { return <main>.
 
 The result returns `import_id`, each responsive frame's ID, a DOM-to-native `node_map`, and explicit issues. Screen frames match the requested viewport dimensions and clip overflow, including offscreen tooltips. An explicit `selector` captures that component's border box instead. One import is one undo entry; its successful acknowledgement waits for local autosave. Read `canvas_get_import_report({"document_id":"...","import_id":"..."})` before describing fidelity. Inline SVGs and SVG images convert to editable vectors; original markup remains preserved. Raster images retain their bytes. Available font bytes register under unique aliases to avoid collisions between documents; unavailable or unsupported faces are reported instead of being silently described as exact.
 
-Call `canvas_preview_import({"document_id":"...","frame_id":"..."})` to open the original interactive component in the native panel. A selected imported frame also exposes a small **Preview React prototype** button. Agents use `canvas_preview_action` with `action: "click"` and a CSS selector, `"fill"` plus `value`, `"snapshot"` to inspect visible text/controls, or `"close"`. Menus, tabs and modals driven by local React state work. Interaction state resets when closing; original code and resources persist. A timed-out action is uncertain and must not be replayed automatically.
+Humans interact directly with onscreen imported frames in the default **Interact** mode. Agents can also call `canvas_preview_import({"document_id":"...","frame_id":"..."})` to open a focused preview in the native panel. A selected imported frame in Visual edits exposes a small **Preview React prototype** button. Agents use `canvas_preview_action` with `action: "click"` and a CSS selector, `"fill"` plus `value`, `"snapshot"` to inspect visible text/controls, or `"close"`. Menus, tabs and modals driven by local React state work. Focused preview state resets when closing; original code and resources persist. A timed-out action is uncertain and must not be replayed automatically.
 
 The prototype frame is opaque and script-only: no access to the editor, MCP bridge, host credentials, network APIs, forms navigation or popups. Only local supplied/bundled assets are allowed during capture; missing resources and blocked requests appear in the report. External assets must be provided locally. Preview requires a host that supports declared `blob:` nested frames. Other harnesses must verify that capability rather than assuming it.
 
@@ -211,7 +223,7 @@ Codex is the primary integration. The editor and typed MCP design tools can be r
 For a harness supporting MCP Apps:
 
 1. Build this checkout and register `node /absolute/path/to/canvy/server/stdio.mjs` as a stdio MCP server using your host's configuration format and optional `CANVY_*` settings.
-2. Support the `text/html;profile=mcp-app` resource linked by `open_canvas` through `_meta.ui.resourceUri`. Currently it is `ui://canvy/canvas/v5`; discover it instead of hard-coding it. Preserve its negotiated, compressed chunk transfers when adapting the native bridge.
+2. Support the `text/html;profile=mcp-app` resource linked by `open_canvas` through `_meta.ui.resourceUri`. Currently it is `ui://canvy/canvas/v6`; discover it instead of hard-coding it. Preserve its negotiated, compressed chunk transfers when adapting the native bridge.
 3. Mount an isolated surface, perform `ui/initialize`, and route app `tools/call` requests to the five app-only `_canvas_*` tools. Preserve their session identity and visibility restrictions.
 4. Handle model-context updates and human-authorized selection messages. Review `src/native-host.js` for OpenAI extension fallbacks; adapt OpenAI entrypoints, fullscreen metadata, messaging and context integration to your host.
 5. Verify persistence, navigation, duplicate-writer rejection, selection targeting and recovery in the actual harness. The [native protocol test host](tests/native-harness.mjs) is a reference for tests, not a production host.
@@ -231,11 +243,11 @@ npm test
 
 On Linux, use `npx playwright install --with-deps chromium` if browser system libraries are missing. To use an installed Edge or Chrome, set `CANVY_BROWSER_CHANNEL=msedge` or `chrome`. Default tests use Playwright Chromium and isolated ports/data; they do not edit your saved canvases.
 
-`npm test` runs native-transfer, compatibility, multicanvas, native navigation, backend recovery, Space-drag and React-import suites sequentially. They exercise the actual bundled resource inside an **opaque MCP Apps protocol harness**. Native-transfer tests preserve a large high-entropy checkpoint through small bridge messages and a save longer than its connection lease. React tests verify responsive geometry, original assets, editable vectors/text, undo, checkpoint reload and modal/form interactions. A passing harness test does not prove a desktop pointer interaction in Codex.
+`npm test` runs native-transfer, compatibility, multicanvas, native navigation, backend recovery, Space-drag, interaction-mode and React-import suites sequentially. They exercise the actual bundled resource inside an **opaque MCP Apps protocol harness**. Native-transfer tests preserve a large high-entropy checkpoint through small bridge messages and a save longer than its connection lease. Interaction tests click an inline React menu, type form spaces, pan from a focused prototype, switch to native dragging with autosave, and verify that Interact blocks native Delete/Undo. React tests verify responsive geometry, original assets, editable vectors/text, undo, checkpoint reload and modal/form interactions. A passing harness test does not prove a desktop pointer interaction in Codex.
 
 After installing, `npm run test:installed` verifies stdio configuration, native metadata, discovery and a fresh Codex app-server catalog. It uses your installed plugin/backend. Real Codex rendering has been exercised during development; every new host adapter still needs its own integration check.
 
-Build guards reject external native bootstrap assets/static frames and limit the packed resource to fit MCP stdio. The optional prototype creates an isolated local `blob:` frame at runtime; no external canvas is embedded. The native Vite adapter embeds workers and patches the pinned CanvasKit loader and OpenPencil locale storage for opaque origins. Review these adapters when upgrading dependencies.
+Build guards reject external native bootstrap assets/static frames and limit the packed resource to fit MCP stdio. Interactive React mockups create isolated local `blob:` frames at runtime; no external canvas is embedded. The native Vite adapter embeds workers and patches the pinned CanvasKit loader and OpenPencil locale storage for opaque origins. Review these adapters when upgrading dependencies.
 
 To update: preserve the data directory, pull changes, run `npm ci` and `npm run install:codex`. To uninstall, use the host's plugin removal flow; retain the data directory if you want to keep designs. This is a source distribution, not a submission to the universal public plugin directory.
 

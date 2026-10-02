@@ -9,7 +9,7 @@ export function createServiceLifecycle(root, origin, { dataDirectory = resolve(r
     try {
       const response = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(1000) });
       const value = await response.json();
-      return response.ok && ['canvy', 'freecanvas'].includes(value.name) && ['0.3.0', '0.3.1', '0.3.2', '0.3.3', '0.3.4', '0.3.5', '0.3.6', '0.3.7', '0.4.0', '0.4.1', '0.5.0', '0.5.1', '0.5.2', '0.5.3', '0.5.4'].includes(value.version);
+      return response.ok && ['canvy', 'freecanvas'].includes(value.name) && ['0.3.0', '0.3.1', '0.3.2', '0.3.3', '0.3.4', '0.3.5', '0.3.6', '0.3.7', '0.4.0', '0.4.1', '0.5.0', '0.5.1', '0.5.2', '0.5.3', '0.5.4', '0.5.5'].includes(value.version);
     } catch { return false; }
   }
   return async function ensureService() {

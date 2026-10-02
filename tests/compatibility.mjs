@@ -49,7 +49,7 @@ try {
   assert.equal(await home.surface.locator('html').getAttribute('lang'), 'en');
   await home.surface.getByRole('button', { name: 'Open My first canvas', exact: true }).waitFor();
   assert.equal((await call('canvas_status', { document_id: a.id })).connection_state, 'home_connected');
-  const panel = await host.addPanel(a.id);
+  const panel = await host.addPanel(a.id, { visualEdits: true });
   assert.equal((await call('canvas_status', { document_id: a.id })).connection_state, 'document_connected');
   const screen = await call('canvas_render', { document_id: a.id, jsx: '<Frame name="Compatibility screen" w={420} h={220} fill="#fff"><Text name="QA title" x={24} y={24} w={350} h={32} fontFamily="Roboto" fontSize={20}>Editable native design</Text></Frame>' });
   const title = (await call('get_node', { document_id: a.id, id: screen.id, depth: 1 })).children.find(n => n.type === 'TEXT');

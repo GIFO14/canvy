@@ -32,7 +32,7 @@ try {
   await client.connect(new StreamableHTTPClientTransport(new URL(origin + '/mcp')));
   host = await nativeHarness(client, origin);
   const doc = (await call('create_canvas', { name: 'Space pan QA' })).document;
-  const panel = await host.addPanel(doc.id);
+  const panel = await host.addPanel(doc.id, { visualEdits: true });
   const args = { document_id: doc.id };
   const shape = await call('canvas_render', { ...args, jsx: '<Frame name="Unmoved mockup" w={400} h={220} bg="#ffffff"><Text name="Editable text" x={24} y={24} w={350} h={40} fontSize={20}>Editable text</Text></Frame>' });
   const canvas = panel.surface.getByTestId('design-canvas');

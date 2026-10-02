@@ -4,7 +4,9 @@ import { PhCursor, PhHand, PhCornersOut, PhChatCircle, PhArrowCounterClockwise, 
 import { editor, status, initialize, connectBridge, contextPacket, saveDocument, scheduleSave, switchDocument, createDocument, refreshDocuments, renameDocument } from './editor.js';
 import Canvas from './Canvas.vue';
 import PrototypePreview from './PrototypePreview.vue';
-import { preview, openPreview } from './prototype-preview.js';
+import InteractionCanvas from './InteractionCanvas.vue';
+import { interaction } from './interaction-mode.js';
+import { preview, openPreview, closePreview } from './prototype-preview.js';
 const booted = ref(false), connected = ref(false), ready = ref(false), version = ref(0);
 const error = ref(''), notice = ref(''), hostConnected = ref(false), sending = ref(false);
 const activeTool = computed(() => editor.state.activeTool);
@@ -16,6 +18,16 @@ const saveLabel = computed(() => status.saveError ? 'Could not save. Retrying…
 let disconnect, noticeTimer;
 const stops = [];
 function setTool(id) { editor.setTool(id); }
+function setMode(mode) {
+  try {
+    editor.commitTextEdit();
+    // Switching review modes neither discards nor replaces the document. Keep
+    // dirty drafts visible and autosaving even when persistence is retrying.
+    if (status.dirty) scheduleSave();
+    closePreview(); interaction.mode = mode; editor.setTool('SELECT');
+    if (mode === 'interact') editor.select([]);
+  } catch (e) { error.value = e.message; }
+}
 function notify(text) { notice.value = text; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => { notice.value = ''; }, 3500); }
 async function openDocument(id) { try { await switchDocument(id); } catch (e) { error.value = e.message; } }
 async function home() { try { await switchDocument(null); await refreshDocuments(); } catch (e) { error.value = e.message; } }
@@ -40,14 +52,15 @@ function keydown(e) {
   if (preview.current) return;
   if (status.home || status.switching) return;
   if (e.target.closest('input,textarea,[contenteditable]')) return;
+  if (e.key.toLowerCase() === 'h') { setTool('HAND'); return; }
+  if (e.key.toLowerCase() === 'v') { void setMode('visual'); return; }
+  if (interaction.mode !== 'visual') return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
     e.preventDefault(); e.shiftKey ? editor.redoAction() : editor.undoAction(); scheduleSave(); return;
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
     e.preventDefault(); void saveDocument().catch((e) => { error.value = e.message; }); return;
   }
-  if (e.key.toLowerCase() === 'v') setTool('SELECT');
-  if (e.key.toLowerCase() === 'h') setTool('HAND');
   if (e.key === 'Escape') { editor.select([]); setTool('SELECT'); error.value = ''; }
   if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); editor.deleteSelected(); scheduleSave(); }
 }
@@ -69,8 +82,9 @@ onMounted(async () => {
 onUnmounted(() => { disconnect?.(); stops.forEach((stop) => stop()); clearTimeout(noticeTimer); window.removeEventListener('keydown', keydown); });
 </script>
 <template>
-  <main class="canvas-shell" aria-label="Canvy" :data-connected="connected" :data-ready="ready" :data-save-error="Boolean(status.saveError)" :data-saved="Boolean(status.savedAt) && !status.dirty && !status.saving">
+  <main class="canvas-shell" aria-label="Canvy" data-ui-release="0.5.5" :data-mode="interaction.mode" :data-connected="connected" :data-ready="ready" :data-save-error="Boolean(status.saveError)" :data-saved="Boolean(status.savedAt) && !status.dirty && !status.saving">
     <Canvas v-if="booted" :inert="status.home || status.switching || Boolean(preview.current)" @ready="ready = true" />
+    <InteractionCanvas v-if="booted" />
     <PrototypePreview v-if="preview.current" :key="preview.current.import_id + ':' + preview.current.width" />
     <div v-if="!ready" class="loading" role="status">Preparing canvas…</div>
     <section v-if="booted && status.home" class="canvas-home" aria-label="Canvy Home">
@@ -100,15 +114,19 @@ onUnmounted(() => { disconnect?.(); stops.forEach((stop) => stop()); clearTimeou
     <nav v-if="booted && !status.home" class="canvas-tools" aria-label="Canvas controls">
       <button @click="home" aria-label="Back to Home" :title="status.document?.name" :disabled="status.switching"><PhHouse :size="19" /></button>
       <span class="tool-divider" />
-      <button :class="{ active: activeTool === 'SELECT' }" @click="setTool('SELECT')" aria-label="Select" title="Select and move (V)"><PhCursor :size="19" /></button>
+      <button v-if="interaction.mode === 'visual'" :class="{ active: activeTool === 'SELECT' }" @click="setTool('SELECT')" aria-label="Select" title="Select and move (V)"><PhCursor :size="19" /></button>
       <button :class="{ active: activeTool === 'HAND' }" @click="setTool('HAND')" aria-label="Pan canvas" title="Pan canvas (H or hold Space + drag)"><PhHand :size="19" /></button>
       <span class="tool-divider" />
       <button @click="editor.zoomToFit()" aria-label="Fit canvas" title="Fit mockups"><PhCornersOut :size="19" /></button>
-      <button @click="editor.undoAction()" aria-label="Undo" title="Undo (Ctrl Z)"><PhArrowCounterClockwise :size="19" /></button>
+      <button v-if="interaction.mode === 'visual'" @click="editor.undoAction()" aria-label="Undo" title="Undo (Ctrl Z)"><PhArrowCounterClockwise :size="19" /></button>
       <button v-if="importedSelection" @click="openPreview(editor.graph, { frame_id: importedSelection.id })" aria-label="Preview React prototype" title="Preview original React prototype">▶</button>
     </nav>
+    <div v-if="booted && !status.home" class="mode-control" role="group" aria-label="Canvas mode">
+      <button :aria-pressed="interaction.mode === 'interact'" @click="setMode('interact')" :disabled="status.switching">Interact</button>
+      <button :aria-pressed="interaction.mode === 'visual'" @click="setMode('visual')" :disabled="status.switching" title="Select and move design elements (V)">Visual edits</button>
+    </div>
     <button v-if="!status.home" class="zoom-control" @click="editor.zoomToFit()" aria-label="Fit canvas and show zoom"><span class="connection-dot" :class="{ connected, saving: status.saving || status.dirty, failed: status.saveError }" :title="saveLabel" /><span>{{ zoom }}%</span></button>
-    <button v-if="!status.home && hostConnected && selected" class="selection-action" @click="sendContext" :disabled="sending" aria-label="Send selection to Codex"><PhChatCircle :size="17" />{{ sending ? 'Sending…' : 'Send to Codex' }}</button>
+    <button v-if="!status.home && interaction.mode === 'visual' && hostConnected && selected" class="selection-action" @click="sendContext" :disabled="sending" aria-label="Send selection to Codex"><PhChatCircle :size="17" />{{ sending ? 'Sending…' : 'Send to Codex' }}</button>
     <div v-if="notice || error || status.saveError || status.openError" class="toast" :class="{ error: error || status.saveError || status.openError }" role="status" @click="notice = ''; error = ''; status.openError = ''">{{ status.openError || (status.saveError ? 'Could not save locally. Retrying automatically…' : error || notice) }}</div>
   </main>
 </template>

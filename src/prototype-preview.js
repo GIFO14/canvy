@@ -3,8 +3,20 @@ import { reactive } from 'vue';
 export const preview = reactive({ current: null, ready: false, error: '' });
 let frame, pending = new Map(), listener;
 // This function executes only inside the opaque, script-only prototype frame.
-function childBridge() {
+function childBridge(canvasNavigation = false) {
   const channel = 'canvy-prototype-v1';
+  if (canvasNavigation) {
+    let panning = false;
+    // Canvas focus takes over the gesture. Its keyup releases Hand; clear our
+    // latch on blur so another gesture can start after returning to this frame.
+    addEventListener('blur', () => { panning = false; });
+    addEventListener('keydown', event => {
+      if (event.code !== 'Space' || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.target?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]')) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (!panning) { panning = true; parent.postMessage({ channel, panKey: true }, '*'); }
+    }, true);
+    addEventListener('keyup', event => { if (event.code === 'Space') { panning = false; parent.postMessage({ channel, panKey: false }, '*'); } }, true);
+  }
   const settle = () => new Promise(resolve => {
     // React commits also happen in collapsed native panels where RAF may stop.
     const timer = setTimeout(done, 100); let first, second;
@@ -35,8 +47,8 @@ function childBridge() {
   addEventListener('securitypolicyviolation', event => parent.postMessage({ channel, warning: `Blocked prototype resource: ${event.violatedDirective}` }, '*'));
   addEventListener('load', async () => { await document.fonts.ready; await settle(); parent.postMessage({ channel, ready: true }, '*'); });
 }
-export function previewHtml(html) {
-  const bundled = html.replace("font-src data:", "font-src data: blob:").replace('<body>', `<body><script>(${installPrototypeAssets.toString()})();(${childBridge.toString()})();</script>`);
+export function previewHtml(html, { inline = false } = {}) {
+  const bundled = html.replace("font-src data:", "font-src data: blob:").replace('<body>', `<body><script>(${installPrototypeAssets.toString()})();(${childBridge.toString()})(${inline});</script>`);
   // Blob documents inherit the native host's nonce policy. Their own CSP cannot
   // relax it. Carry the host nonce into the original bundle and bridge scripts.
   const nonce = document.querySelector('script[nonce]')?.nonce;
