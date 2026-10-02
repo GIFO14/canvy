@@ -6,6 +6,7 @@ import { once } from 'node:events';
 import { createServer } from 'node:net';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { nativeHarness } from './native-harness.mjs';
+import { waitForService } from './service-ready.mjs';
 import { source, css, badge } from './frontend-fixture.mjs';
 import { source as effectsSource, css as effectsCss } from './frontend-effects-fixture.mjs';
 import { captureFrontend, compileFrontend } from '../server/frontend-import.mjs';
@@ -30,7 +31,7 @@ const files = [{ path: 'badge.svg', content: badge }, ...await Promise.all([['fi
 const input = { source, css, files, tailwind: true, viewports: [{ width: 400, height: 500 }, { width: 1000, height: 700 }], name: 'React dashboard' };
 const checks = [];
 try {
-  for (let n = 0; n < 100; n++) { if (await fetch(origin + '/health').then(r => r.ok, () => false)) break; await new Promise(r => setTimeout(r, 50)); }
+  await waitForService(origin, service);
   await client.connect(new StreamableHTTPClientTransport(new URL(origin + '/mcp')));
   host = await nativeHarness(client, origin, undefined, { nonceCsp: true });
   const document = (await call('create_canvas', { name: 'Frontend import QA' })).document;

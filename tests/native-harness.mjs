@@ -18,15 +18,15 @@ export async function nativeHarness(client, origin, viewport = { width: 1200, he
   const nonce = 'canvy-native-qa';
   const csp = "default-src 'none'; script-src 'nonce-" + nonce + "' blob: 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src blob:; font-src blob:; connect-src 'none'; frame-src 'self' blob:; worker-src blob:";
   await page.route(origin + '/native-test', route => route.fulfill({ contentType: 'text/html', ...(nonceCsp ? { headers: { 'Content-Security-Policy': csp } } : {}), body: `<!doctype html><html><style>html,body{margin:0;height:100%;background:#2b2b2b}iframe{width:100%;height:100%;border:0;position:absolute;inset:0}</style><body><script nonce="${nonce}">
-    window.nativeMessages=[];
+    window.nativeMessages=[];window.nativeContexts=[];
     window.addEventListener('message',async e=>{
       const frame=[...document.querySelectorAll('iframe')].find(f=>f.contentWindow===e.source);
       if(!frame||e.data?.jsonrpc!=='2.0')return;
       const m=e.data;let result;
       if(m.method==='ui/initialize')result={protocolVersion:m.params.protocolVersion,hostInfo:{name:'Native protocol QA, not Codex',version:'1'},hostCapabilities:{serverTools:{},message:{text:{}},updateModelContext:{text:{},structuredContent:{}}},hostContext:{theme:'dark',displayMode:'fullscreen'}};
       else if(m.method==='tools/call')result=await window.serverTool(m.params);
-      else if(m.method==='ui/update-model-context')result={};
-      else if(m.method==='ui/message'){window.nativeMessages.push(m.params);result={};}
+      else if(m.method==='ui/update-model-context'){window.nativeContexts.push(m.params);result={};}
+      else if(m.method==='ui/message'){window.nativeMessages.push(m.params);result=window.rejectMessages?{isError:true}:{};}
       else return;
       e.source.postMessage({jsonrpc:'2.0',id:m.id,result},'*');
       if(m.method==='ui/initialize' && frame.dataset.document) e.source.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-input',params:{arguments:{document_id:frame.dataset.document}}},'*');
@@ -34,7 +34,7 @@ export async function nativeHarness(client, origin, viewport = { width: 1200, he
   </script></body></html>` }));
   await page.goto(origin + '/native-test');
   let count = 0;
-  async function addPanel(document_id, { collapsed = false, visualEdits = false } = {}) {
+  async function addPanel(document_id, { collapsed = false, visualEdits = false, readyTimeout = 30000 } = {}) {
     const id = `canvas${++count}`;
     await page.evaluate(({ id, html, document_id, collapsed }) => {
       for (const frame of document.querySelectorAll('iframe')) frame.style.visibility = 'hidden';
@@ -45,7 +45,7 @@ export async function nativeHarness(client, origin, viewport = { width: 1200, he
       frame.srcdoc = html; document.body.append(frame);
     }, { id, html: nonceCsp ? resource.contents[0].text.replace('<script>', `<script nonce="${nonce}">`) : resource.contents[0].text, document_id, collapsed });
     const surface = page.frameLocator('#' + id);
-    await surface.locator('main[data-connected="true"][data-ready="true"]').waitFor({ state: 'attached' });
+    await surface.locator('main[data-connected="true"][data-ready="true"]').waitFor({ state: 'attached', timeout: readyTimeout });
     if (visualEdits) { await surface.getByRole('button', { name: 'Visual edits', exact: true }).click(); await surface.locator('main[data-mode="visual"]').waitFor(); }
     return { id, surface };
   }

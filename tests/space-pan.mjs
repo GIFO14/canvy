@@ -6,6 +6,7 @@ import { once } from 'node:events';
 import { createServer } from 'node:net';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { nativeHarness } from './native-harness.mjs';
+import { waitForService } from './service-ready.mjs';
 
 const data = await mkdtemp(resolve('.runtime/space-pan-qa-'));
 const probe = createServer(); probe.listen(0, '127.0.0.1'); await once(probe, 'listening');
@@ -26,9 +27,7 @@ function sameView(a, b) {
   assert.equal(a.zoom, b.zoom);
 }
 try {
-  let ready;
-  for (let n = 0; n < 100; n++) { ready = await fetch(origin + '/health').then(r => r.ok, () => false); if (ready) break; await new Promise(r => setTimeout(r, 50)); }
-  assert.ok(ready);
+  await waitForService(origin, service);
   await client.connect(new StreamableHTTPClientTransport(new URL(origin + '/mcp')));
   host = await nativeHarness(client, origin);
   const doc = (await call('create_canvas', { name: 'Space pan QA' })).document;

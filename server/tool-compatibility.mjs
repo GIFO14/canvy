@@ -19,7 +19,7 @@ export const CORE_TOOLS = new Set([
   'find_nodes', 'query_nodes', 'create_shape', 'create_vector', 'create_page',
   'delete_node', 'clone_node', 'group_nodes', 'arrange', 'batch_update',
   'export_image', 'export_jsx', 'export_svg', 'redo', 'save_document',
-  'send_selection_to_chat',
+  'send_selection_to_chat', 'canvas_set_annotation',
   ...[...COMPATIBILITY_TOOLS].map(name => `canvas_${name}`)
 ]);
 

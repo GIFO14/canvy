@@ -6,6 +6,7 @@ import { once } from 'node:events';
 import { createServer } from 'node:net';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { nativeHarness } from './native-harness.mjs';
+import { waitForService } from './service-ready.mjs';
 import { createServiceClient } from '../server/service-client.mjs';
 const data = await mkdtemp(resolve('.runtime/multicanvas-qa-'));
 const probe = createServer(); probe.listen(0, '127.0.0.1'); await once(probe, 'listening');
@@ -15,9 +16,7 @@ const serviceRequest = createServiceClient(origin);
 let service, client, host;
 async function start() {
   service = spawn(process.execPath, ['server/index.mjs'], { windowsHide: true, env: { ...process.env, CANVY_PORT: String(port), CANVY_DATA_DIR: data }, stdio: 'ignore' });
-  let ready = false;
-  for (let n = 0; n < 100; n++) { try { ready = (await fetch(origin + '/health')).ok; } catch {} if (ready) break; await new Promise(r => setTimeout(r, 50)); }
-  assert.ok(ready);
+  await waitForService(origin, service);
   client = new Client({ name: 'multicanvas-qa', version: '1' });
   await client.connect(new StreamableHTTPClientTransport(new URL(origin + '/mcp')));
 }

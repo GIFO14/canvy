@@ -6,6 +6,7 @@ import { once } from 'node:events';
 import { createServer } from 'node:net';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { nativeHarness } from './native-harness.mjs';
+import { waitForService } from './service-ready.mjs';
 import { createServiceClient } from '../server/service-client.mjs';
 
 const data = await mkdtemp(resolve('.runtime/navigation-qa-'));
@@ -20,19 +21,19 @@ let failPersistence = false;
 let heldExchange;
 let blockRecovery = false;
 async function call(name, args = {}) {
-  const result = await agent.callTool({ name, arguments: args });
+  if (process.env.CANVY_QA_TRACE) console.log('CALL', name, args.document_id ?? '', args.panel_id ?? '');
+  const result = await agent.callTool({ name, arguments: args }, { timeout: 125000 });
   assert.ok(!result.isError, `${name}: ${JSON.stringify(result.content)}`);
   return result.structuredContent ?? JSON.parse(result.content.find(c => c.type === 'text').text);
 }
 async function failed(name, args, pattern) {
-  const result = await agent.callTool({ name, arguments: args });
+  if (process.env.CANVY_QA_TRACE) console.log('EXPECTED FAILURE', name);
+  const result = await agent.callTool({ name, arguments: args }, { timeout: 125000 });
   assert.ok(result.isError); assert.match(result.content[0].text, pattern);
 }
 const checks = [];
 try {
-  let ready;
-  for (let n = 0; n < 100; n++) { ready = await fetch(origin + '/health').then(r => r.ok, () => false); if (ready) break; await new Promise(r => setTimeout(r, 50)); }
-  assert.ok(ready);
+  await waitForService(origin, service);
   await uiClient.connect(new StreamableHTTPClientTransport(new URL(origin + '/mcp')));
   await agent.connect(new StreamableHTTPClientTransport(new URL(origin + '/mcp')));
   host = await nativeHarness(uiClient, origin, undefined, { interceptTool: async params => {

@@ -7,6 +7,7 @@ import { createServer } from 'node:net';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { McpServer, InMemoryTransport } from '@modelcontextprotocol/server';
 import { nativeHarness } from './native-harness.mjs';
+import { waitForService } from './service-ready.mjs';
 
 await mkdir('.runtime', { recursive: true });
 const storage = await mkdtemp(resolve('.runtime/resource-routing-qa-'));
@@ -23,7 +24,7 @@ oldProvider.registerResource('canvy-canvas', 'ui://canvy/canvas/v5', { mimeType:
 const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 let host;
 try {
-  for (let n = 0; n < 100; n++) { if (await fetch(origin + '/health').then(r => r.ok, () => false)) break; await new Promise(r => setTimeout(r, 50)); }
+  await waitForService(origin, backend);
   await oldProvider.connect(serverTransport); await oldClient.connect(clientTransport);
   await fresh.connect(new StreamableHTTPClientTransport(new URL(origin + '/mcp')));
   await assert.rejects(oldClient.readResource({ uri: 'ui://canvy/canvas/v6' }), /Resource not found/, 'Reproduce the reported pre-editor failure');

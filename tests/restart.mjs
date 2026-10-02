@@ -7,6 +7,7 @@ import { createServer } from 'node:net';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { expect } from '@playwright/test';
 import { nativeHarness } from './native-harness.mjs';
+import { waitForService } from './service-ready.mjs';
 
 await mkdir('.runtime', { recursive: true });
 const data = await mkdtemp(resolve('.runtime/restart-qa-'));
@@ -23,7 +24,7 @@ async function call(name, args = {}) {
   return result.structuredContent ?? JSON.parse(result.content.find(c => c.type === 'text').text);
 }
 try {
-  for (let n = 0; n < 100; n++) { if (await fetch(origin + '/health').then(r => r.ok, () => false)) break; await new Promise(r => setTimeout(r, 50)); }
+  await waitForService(origin, service);
   await client.connect(new StreamableHTTPClientTransport(new URL(origin + '/mcp')));
   host = await nativeHarness(client, origin, { width: 1400, height: 900 }, { nonceCsp: true });
   const document = (await call('create_canvas', { name: 'Restart QA' })).document;

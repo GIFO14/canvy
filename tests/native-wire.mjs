@@ -8,6 +8,7 @@ import { resolve } from 'node:path';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { SceneGraph } from '@open-pencil/scene-graph';
 import { nativeHarness } from './native-harness.mjs';
+import { waitForService } from './service-ready.mjs';
 import { encodeDocument, decodeDocument } from '../src/document-state.js';
 import { encodeWire, decodeWire, WIRE_CHUNK_CHARS } from '../src/wire-format.js';
 import { createNativeWire } from '../server/native-wire.mjs';
@@ -36,13 +37,17 @@ const service = spawn(process.execPath, ['server/index.mjs'], { windowsHide: tru
 const client = new Client({ name: 'native-wire-qa', version: '1' }); let host;
 const calls = [], checks = []; let held = false, enterHold;
 const entered = new Promise(r => { enterHold = r; });
-const call = async (name, args = {}) => { const result = await client.callTool({ name, arguments: args }, { timeout: 90000 }); assert.ok(!result.isError, `${name}: ${JSON.stringify(result.content)}`); return result.structuredContent ?? JSON.parse(result.content[0].text); };
+const call = async (name, args = {}) => { const result = await client.callTool({ name, arguments: args }, { timeout: 120000 }); assert.ok(!result.isError, `${name}: ${JSON.stringify(result.content)}`); return result.structuredContent ?? JSON.parse(result.content[0].text); };
 try {
-  for (let n = 0; n < 100; n++) { if (await fetch(origin + '/health').then(r => r.ok, () => false)) break; await new Promise(r => setTimeout(r, 50)); }
+  await waitForService(origin, service);
   await client.connect(new StreamableHTTPClientTransport(new URL(origin + '/mcp')));
   const document = (await call('create_canvas', { name: 'Large native checkpoint QA' })).document;
   const target = { document_id: document.id }, path = resolve(storage, 'canvases', document.id + '.freecanvas');
-  const graph = new SceneGraph(); graph.canvyResources = { fonts: {}, imports: {}, original };
+  const large = randomBytes(40 * 1024 * 1024).toString('base64');
+  const graph = new SceneGraph(); graph.canvyResources = { fonts: {}, imports: {}, original: large };
+  const pageId = graph.getPages()[0].id;
+  for (let i = 0; i < 10001; i++) graph.createNode('RECTANGLE', pageId, { name: `Preserved node ${i}`, visible: false });
+  assert.ok(Buffer.byteLength(encodeDocument(graph)) > 32 * 1024 * 1024);
   await writeFile(path, encodeDocument(graph));
   host = await nativeHarness(client, origin, undefined, { interceptTool: async params => {
     const bytes = Buffer.byteLength(JSON.stringify(params)); calls.push({ name: params.name, bytes });
@@ -51,18 +56,18 @@ try {
       held = true; enterHold(); await new Promise(r => setTimeout(r, 16000));
     }
   } });
-  const panel = await host.addPanel(document.id, { collapsed: true });
+  const panel = await host.addPanel(document.id, { collapsed: true, readyTimeout: 120000 });
   checks.push('Large opaque native document downloads without a single oversized bridge message');
   const pending = call('canvas_render', { ...target, jsx: '<Frame name="Large checkpoint card" w={300} h={100}><Text w={250} h={30}>Preserve original bytes</Text></Frame>' });
   await entered; await new Promise(r => setTimeout(r, 15500));
   assert.equal((await call('canvas_diagnostics', target)).connection_state, 'document_connected');
   const frame = await pending;
-  assert.equal(hash(decodeDocument(await readFile(path, 'utf8')).canvyResources.original), hash(original));
-  assert.ok(calls.filter(c => c.name === '_canvas_persist').length > 10);
-  checks.push('High-entropy checkpoint larger than the 4 MiB MCP limit saves in bounded chunks without losing resources', 'Connection heartbeats remain live during a save longer than the 15-second lease');
+  assert.equal(hash(decodeDocument(await readFile(path, 'utf8')).canvyResources.original), hash(large));
+  assert.ok(calls.filter(c => c.name === '_canvas_persist').length > 192);
+  checks.push('High-entropy checkpoint larger than the old 32 MiB persistence and 192-chunk limits saves in bounded chunks without losing resources', 'Reversible editing works above the former 10,000-node guard', 'Connection heartbeats remain live during a save longer than the 15-second lease');
   await call('switch_canvas', {}); await call('switch_canvas', target);
   assert.equal((await call('get_node', { ...target, id: frame.id })).id, frame.id);
-  assert.equal(hash(decodeDocument(await readFile(path, 'utf8')).canvyResources.original), hash(original));
+  assert.equal(hash(decodeDocument(await readFile(path, 'utf8')).canvyResources.original), hash(large));
   await panel.surface.getByRole('button', { name: 'Back to Home', exact: true }).waitFor({ state: 'attached' });
   assert.deepEqual(host.errors, []);
   checks.push('Save acknowledgement, original resources and node IDs survive reopen', 'Malformed size, reordered chunks and cross-session uploads are rejected');

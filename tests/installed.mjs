@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { CORE_TOOLS } from '../server/tool-compatibility.mjs';
+import { DOCUMENT_MAX_BYTES, REVERSIBLE_MAX_NODES } from '../src/limits.js';
 const { version } = JSON.parse(await readFile('package.json'));
 await mkdir('artifacts', { recursive: true });
 const installed = resolve(homedir(), `.codex/plugins/cache/canvy-local/canvy/${version}`);
@@ -27,7 +28,7 @@ try {
   assert.ok(!resource.contents[0].text.includes('<iframe'));
   const diagnostics = await client.callTool({ name: 'canvas_diagnostics', arguments: {} });
   assert.ok(!diagnostics.isError); assert.equal(diagnostics.structuredContent.tools.length, CORE_TOOLS.size);
-  assert.equal(diagnostics.structuredContent.registered_public_tools, 161);
+  assert.equal(diagnostics.structuredContent.registered_public_tools, 162);
   assert.equal(tools.tools.length, CORE_TOOLS.size + 5);
   for (const name of CORE_TOOLS) assert.ok(tools.tools.some(t => t.name === name), `Missing core tool ${name}`);
   const closed = await client.callTool({ name: 'canvas_status', arguments: { document_id: 'unopened-installed-qa' } });
@@ -39,6 +40,8 @@ try {
     assert.equal(diagnostics.structuredContent.version, version, 'Diagnostics reports the actual backend release');
     const library = await client.callTool({ name: 'list_documents', arguments: {} });
     assert.equal(library.structuredContent.capabilities.trash, true, 'The updated backend advertises recoverable deletion');
+    assert.equal(library.structuredContent.capabilities.save_bytes, DOCUMENT_MAX_BYTES);
+    assert.equal(library.structuredContent.capabilities.reversible_structure_nodes_and_variables, REVERSIBLE_MAX_NODES);
   }
   // Actual retained backend resource routing is separate from fresh stdio
   // discovery: the desktop can use this older provider for an existing chat.
@@ -51,6 +54,6 @@ try {
     assert.equal((await (await fetch(origin + '/health')).json()).pid, health.pid, 'Resource reads must not restart the live backend');
   } finally { await retained.close(); }
   for (const name of ['canvas_render', 'canvas_set_text', 'canvas_set_fill', 'canvas_set_font', 'canvas_undo', 'canvas_diagnostics']) assert.ok(tools.tools.some(t => t.name === name), `Missing essential compatibility tool ${name}`);
-  await writeFile('artifacts/installed-test.json', JSON.stringify({ status: 'PASS', version, installed, tools: tools.tools.length, aliases: 33, publicTools: diagnostics.structuredContent.tools.length, registeredPublicTools: 161, toolProfile: 'core', diagnosticsWithoutPanel: true, resourceUri: open._meta.ui.resourceUri, nativeHost: 'Launcher and resource verified; no desktop pointer test claim' }, null, 2));
+  await writeFile('artifacts/installed-test.json', JSON.stringify({ status: 'PASS', version, installed, tools: tools.tools.length, aliases: 33, publicTools: diagnostics.structuredContent.tools.length, registeredPublicTools: 162, toolProfile: 'core', diagnosticsWithoutPanel: true, resourceUri: open._meta.ui.resourceUri, nativeHost: 'Launcher and resource verified; no desktop pointer test claim' }, null, 2));
   console.log('PASS installed stdio launcher, on-demand service, native entrypoints and UI resource');
 } finally { await client.close(); }

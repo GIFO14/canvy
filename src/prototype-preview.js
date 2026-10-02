@@ -29,6 +29,21 @@ function childBridge(canvasNavigation = false) {
     if (event.source !== parent || data?.channel !== channel || !data.id) return;
     try {
       const { action, selector, value } = data;
+      if (action === 'annotation-pick') {
+        const node = document.elementFromPoint(data.x, data.y);
+        if (!node || node === document.documentElement || node === document.body) {
+          parent.postMessage({ channel, annotationId: data.id, target: null }, '*'); return;
+        }
+        const rect = node.getBoundingClientRect();
+        const path = []; let current = node;
+        while (current && current !== document.body && path.length < 8) {
+          if (current.id) { path.unshift('#' + CSS.escape(current.id)); break; }
+          const siblings = current.parentElement?.children;
+          path.unshift(current.tagName.toLowerCase() + (siblings ? ':nth-child(' + ([...siblings].indexOf(current) + 1) + ')' : ''));
+          current = current.parentElement;
+        }
+        parent.postMessage({ channel, annotationId: data.id, target: { selector: path.join(' > '), label: (node.getAttribute('aria-label') || node.innerText || node.textContent || node.tagName).slice(0, 240), role: node.getAttribute('role') || node.tagName.toLowerCase(), bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } } }, '*'); return;
+      }
       if (action === 'click' || action === 'fill') {
         const node = document.querySelector(selector);
         if (!node) throw new Error('Preview selector was not found');

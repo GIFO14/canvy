@@ -2,11 +2,24 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { PhArrowCounterClockwise } from '@phosphor-icons/vue';
 import { acquireInlinePrototype } from './prototype-preview.js';
+import { registerAnnotationPrototype } from './annotation-prototypes.js';
 const props = defineProps({ screen: Object, disabled: Boolean });
 const iframe = ref(null), ready = ref(false), error = ref(''), generation = ref(0);
 const documentResource = acquireInlinePrototype(props.screen.html), url = documentResource.url;
+const picks = new Map(); let unregisterPick;
+function cancelPicks() { for (const request of picks.values()) { clearTimeout(request.timer); request.resolve(null); } picks.clear(); }
+function pick(x, y) {
+  if (!ready.value || error.value) return Promise.resolve(null);
+  return new Promise(resolve => {
+    const id = crypto.randomUUID();
+    const timer = setTimeout(() => { picks.delete(id); resolve(null); }, 800);
+    picks.set(id, { resolve, timer });
+    iframe.value?.contentWindow?.postMessage({ channel: 'canvy-prototype-v1', id, action: 'annotation-pick', x, y }, '*');
+  });
+}
 const style = computed(() => ({ width: props.screen.width + 'px', height: props.screen.height + 'px', transform: `translate(${props.screen.x}px, ${props.screen.y}px)`, pointerEvents: props.disabled ? 'none' : 'auto' }));
 function restart() {
+  cancelPicks();
   // A new browsing context resets React, URL/hash navigation and failed code.
   // Keep the immutable source resource and every other frame's state intact.
   ready.value = false; error.value = ''; generation.value++;
@@ -14,12 +27,14 @@ function restart() {
 function message(event) {
   if (event.source !== iframe.value?.contentWindow || event.data?.channel !== 'canvy-prototype-v1') return;
   const data = event.data;
+  const request = picks.get(data.annotationId);
+  if (request) { clearTimeout(request.timer); picks.delete(data.annotationId); request.resolve(data.target ?? null); return; }
   if (data.ready) ready.value = true;
   if (data.warning || data.error) error.value = data.warning || data.error;
   if (typeof data.panKey === 'boolean' && !error.value) window.dispatchEvent(new CustomEvent('canvy:prototype-pan', { detail: { pressed: data.panKey } }));
 }
-onMounted(() => window.addEventListener('message', message));
-onUnmounted(() => { window.removeEventListener('message', message); documentResource.release(); });
+onMounted(() => { window.addEventListener('message', message); unregisterPick = registerAnnotationPrototype(props.screen.id, pick); });
+onUnmounted(() => { unregisterPick?.(); cancelPicks(); window.removeEventListener('message', message); documentResource.release(); });
 </script>
 <template>
   <div class="inline-prototype" :style="style" :data-frame-id="screen.id" :data-ready="ready" :data-error="Boolean(error)">

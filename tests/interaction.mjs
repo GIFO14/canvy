@@ -6,6 +6,7 @@ import { once } from 'node:events';
 import { createServer } from 'node:net';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { nativeHarness } from './native-harness.mjs';
+import { waitForService } from './service-ready.mjs';
 import { expect } from '@playwright/test';
 
 await mkdir('.runtime', { recursive: true });
@@ -23,14 +24,14 @@ async function call(name, args = {}) {
   return result.structuredContent ?? JSON.parse(result.content.find(c => c.type === 'text').text);
 }
 try {
-  for (let n = 0; n < 100; n++) { if (await fetch(origin + '/health').then(r => r.ok, () => false)) break; await new Promise(r => setTimeout(r, 50)); }
+  await waitForService(origin, service);
   await client.connect(new StreamableHTTPClientTransport(new URL(origin + '/mcp')));
   host = await nativeHarness(client, origin, undefined, { nonceCsp: true });
   const document = (await call('create_canvas', { name: 'Interaction modes QA' })).document;
   const target = { document_id: document.id };
   const panel = await host.addPanel(document.id);
   await panel.surface.locator('main[data-mode="interact"]').waitFor();
-  assert.equal((await call('canvas_status', target)).ui_release, '0.5.10');
+  assert.equal((await call('canvas_status', target)).ui_release, '0.5.13');
   const imported = await call('canvas_import_react', { ...target, name: 'Menu demo', viewports: [{ width: 600, height: 500 }], css: 'body{margin:0;font:16px sans-serif}main{padding:80px;background:#fff;height:500px;box-sizing:border-box}button,input{padding:12px}aside{margin-top:20px;background:#eef;padding:20px}', source: `import {useState} from 'react'; export default function Screen(){const [open,setOpen]=useState(false);return <main><button id="menu" onClick={()=>setOpen(!open)}>Open menu</button><input aria-label="Notes" placeholder="Notes"/>{open&&<aside role="dialog">Menu is open<button id="close" onClick={()=>setOpen(false)}>Close menu</button></aside>}</main>}` });
   const frameId = imported.frames[0].id;
   await call('canvas_viewport_zoom_to_fit', { ...target, ids: [frameId] });

@@ -6,6 +6,7 @@ import { once } from 'node:events';
 import { createServer } from 'node:net';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { nativeHarness } from './native-harness.mjs';
+import { waitForService } from './service-ready.mjs';
 import { createServiceClient } from '../server/service-client.mjs';
 import { createDocumentStore } from '../server/documents.mjs';
 import { WebSocket } from 'ws';
@@ -28,7 +29,7 @@ async function call(name, args = {}) {
   return result.structuredContent ?? JSON.parse(result.content.find(c => c.type === 'text').text);
 }
 try {
-  for (let n = 0; n < 100; n++) { try { if ((await fetch(origin + '/health')).ok) break; } catch {} await new Promise(r => setTimeout(r, 50)); }
+  await waitForService(origin, service);
   const health = await (await fetch(origin + '/health')).json();
   assert.equal(health.version, '0.5.4');
   assert.equal(health.release, JSON.parse(await readFile('package.json')).version);

@@ -16,7 +16,7 @@ export function createServiceClient(origin, { ensureService } = {}) {
         method: 'POST',
         headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(35000)
+        signal: AbortSignal.timeout(125000)
       });
     }
     if (!token) await refreshToken();

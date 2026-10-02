@@ -5,6 +5,7 @@ import { editor, status, initialize, connectBridge, contextPacket, saveDocument,
 import Canvas from './Canvas.vue';
 import PrototypePreview from './PrototypePreview.vue';
 import InteractionCanvas from './InteractionCanvas.vue';
+import AnnotationCanvas from './AnnotationCanvas.vue';
 import { interaction } from './interaction-mode.js';
 import { preview, openPreview, closePreview } from './prototype-preview.js';
 const booted = ref(false), connected = ref(false), ready = ref(false), version = ref(0);
@@ -102,9 +103,10 @@ onMounted(async () => {
 onUnmounted(() => { disconnect?.(); stops.forEach((stop) => stop()); clearTimeout(noticeTimer); clearInterval(libraryTimer); window.removeEventListener('keydown', keydown); });
 </script>
 <template>
-  <main class="canvas-shell" aria-label="Canvy" data-ui-release="0.5.10" :data-mode="interaction.mode" :data-connected="connected" :data-ready="ready" :data-save-error="Boolean(status.saveError)" :data-saved="Boolean(status.savedAt) && !status.dirty && !status.saving">
+  <main class="canvas-shell" aria-label="Canvy" data-ui-release="0.5.13" :data-mode="interaction.mode" :data-connected="connected" :data-ready="ready" :data-save-error="Boolean(status.saveError)" :data-saved="Boolean(status.savedAt) && !status.dirty && !status.saving">
     <Canvas v-if="booted" :inert="status.home || status.switching || Boolean(preview.current)" @ready="ready = true" />
     <InteractionCanvas v-if="booted" />
+    <AnnotationCanvas v-if="booted && !status.home && interaction.mode === 'annotate' && !preview.current" />
     <PrototypePreview v-if="preview.current" :key="preview.current.import_id + ':' + preview.current.width" />
     <div v-if="!ready" class="loading" role="status">Preparing canvas…</div>
     <section v-if="booted && status.home" class="canvas-home" aria-label="Canvy Home">
@@ -156,6 +158,7 @@ onUnmounted(() => { disconnect?.(); stops.forEach((stop) => stop()); clearTimeou
     <div v-if="booted && !status.home" class="mode-control" role="group" aria-label="Canvas mode">
       <button :aria-pressed="interaction.mode === 'interact'" @click="setMode('interact')" :disabled="status.switching">Interact</button>
       <button :aria-pressed="interaction.mode === 'visual'" @click="setMode('visual')" :disabled="status.switching" title="Select and move design elements (V)">Visual edits</button>
+      <button :aria-pressed="interaction.mode === 'annotate'" @click="setMode('annotate')" :disabled="status.switching" title="Select elements or areas and add feedback">Annotate</button>
     </div>
     <button v-if="!status.home" class="zoom-control" @click="editor.zoomToFit()" aria-label="Fit canvas and show zoom"><span class="connection-dot" :class="{ connected, saving: status.saving || status.dirty, failed: status.saveError }" :title="saveLabel" /><span>{{ zoom }}%</span></button>
     <button v-if="!status.home && interaction.mode === 'visual' && hostConnected && selected" class="selection-action" @click="sendContext" :disabled="sending" aria-label="Send selection to Codex"><PhChatCircle :size="17" />{{ sending ? 'Sending…' : 'Send to Codex' }}</button>

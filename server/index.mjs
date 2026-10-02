@@ -1,3 +1,4 @@
+import { DOCUMENT_MAX_BYTES, REVERSIBLE_MAX_NODES, WIRE_MAX_BYTES } from '../src/limits.js';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,7 +38,7 @@ function assertOpenable(id) {
   if (deleting.has(id) || !documents.isActive(id)) throw new Error('This canvas is in Trash or is being deleted. Restore it from Home before opening it.');
 }
 async function library(body) {
-  if (body.operation === 'list') return { documents: documents.list(), trash: documents.trash(), capabilities: { trash: true } };
+  if (body.operation === 'list') return { documents: documents.list(), trash: documents.trash(), capabilities: { trash: true, save_bytes: DOCUMENT_MAX_BYTES, reversible_structure_nodes_and_variables: REVERSIBLE_MAX_NODES } };
   if (body.operation === 'create') return { document: await documents.create(body.name) };
   if (body.operation === 'rename') return { document: await documents.rename(body.document_id, body.name) };
   if (body.operation === 'restore') return { document: await documents.restore(body.document_id) };
@@ -66,7 +67,9 @@ export async function sendRPC(body) {
   const surface = surfaces[0];
   const id = randomUUID();
   return new Promise((resolveRPC, reject) => {
-    const timeout = body.command === 'canvy_import_frontend' ? 120000 : 30000;
+    // Large checkpoint edits need time to export, compress and persist. The
+    // sequential execution deadline still expires without replaying a write.
+    const timeout = 120000;
     const timer = setTimeout(() => { pending.delete(id); reject(new Error('Canvas request timed out; its outcome is uncertain. Inspect the document before retrying.')); }, timeout);
     pending.set(id, { resolve: resolveRPC, reject, timer, session: surface.id });
     const request = { id, ...body, deadline: Date.now() + timeout, args: { ...body.args, document_id: surface.document_id } };
@@ -85,7 +88,7 @@ app.use('*', async (c, next) => {
 });
 // Retained launchers match this legacy version exactly. Keep the compatible
 // service identity stable; release and feature negotiation carry newer behavior.
-app.get('/health', (c) => c.json({ name: 'canvy', version: '0.5.4', release: '0.5.10', pid: process.pid, connected: browser?.readyState === 1 || liveNative().length > 0, url: origin }));
+app.get('/health', (c) => c.json({ name: 'canvy', version: '0.5.4', release: '0.5.13', pid: process.pid, connected: browser?.readyState === 1 || liveNative().length > 0, url: origin }));
 app.post('/api/diagnostics', async c => {
   if (c.req.header('authorization') !== `Bearer ${bridgeToken}`) return c.json({ error: 'Unauthorized' }, 401);
   const { document_id } = await c.req.json();
@@ -94,7 +97,7 @@ app.post('/api/diagnostics', async c => {
   if (browser?.readyState === 1) open.push('freecanvas');
   const selected = document_id ? open.filter(id => id === document_id) : open;
   const connection_state = selected.length === 1 ? 'document_connected' : selected.length > 1 ? 'multiple_documents_connected' : live.length ? 'home_connected' : 'panel_not_connected';
-  return c.json({ version: '0.5.10', document_id: document_id ?? (selected.length === 1 ? selected[0] : null), connection_state, native_panels: live.length, open_documents: open, requested_document_connected: selected.length === 1, guidance: selected.length === 1 ? null : selected.length > 1 ? 'Specify document_id.' : document_id ? 'Open this document from the native Canvy Home. An opening acknowledgement alone does not attach a panel.' : 'Open and expand the native Canvy panel in Codex.', limits: { save_bytes: 32 * 1024 * 1024, reversible_structure_nodes_and_variables: 10000, rpc_timeout_ms: 30000, import_timeout_ms: 120000, native_panels: 32 } });
+  return c.json({ version: '0.5.13', document_id: document_id ?? (selected.length === 1 ? selected[0] : null), connection_state, native_panels: live.length, open_documents: open, requested_document_connected: selected.length === 1, guidance: selected.length === 1 ? null : selected.length > 1 ? 'Specify document_id.' : document_id ? 'Open this document from the native Canvy Home. An opening acknowledgement alone does not attach a panel.' : 'Open and expand the native Canvy panel in Codex.', limits: { save_bytes: DOCUMENT_MAX_BYTES, reversible_structure_nodes_and_variables: REVERSIBLE_MAX_NODES, rpc_timeout_ms: 120000, import_timeout_ms: 120000, native_panels: 32 } });
 });
 app.get('/api/bootstrap', async (c) => {
   return c.json({ token: bridgeToken, ...(documents.isActive('freecanvas') ? await documents.read('freecanvas') : { document: null, state: null, saved: null }), documents: documents.list() });
@@ -102,9 +105,9 @@ app.get('/api/bootstrap', async (c) => {
 app.put('/api/document', async (c) => {
   if (c.req.header('authorization') !== `Bearer ${bridgeToken}`) return c.json({ error: 'Unauthorized' }, 401);
   const size = Number(c.req.header('content-length') ?? 0);
-  if (size > 32 * 1024 * 1024) return c.json({ error: 'Document too large' }, 413);
+  if (size > WIRE_MAX_BYTES) return c.json({ error: 'Document too large' }, 413);
   const body = new Uint8Array(await c.req.arrayBuffer());
-  if (body.length > 32 * 1024 * 1024) return c.json({ error: 'Document too large' }, 413);
+  if (body.length > WIRE_MAX_BYTES) return c.json({ error: 'Document too large' }, 413);
   let envelope;
   if (c.req.header('content-type') === 'application/json') {
     envelope = JSON.parse(new TextDecoder().decode(body));
@@ -150,7 +153,7 @@ app.post('/api/native', async (c) => {
     if (nativeCanvases.size >= 32) throw new Error('Too many canvas panels');
     const session = { id: randomUUID(), seen: Date.now(), requests: [], document_id: id };
     nativeCanvases.set(session.id, session);
-    panelNavigator.observe(session.id, { document_id: id, navigation: ['0.3.4', '0.3.5', '0.3.6', '0.3.7', '0.4.0', '0.4.1', '0.5.0', '0.5.1', '0.5.2', '0.5.3', '0.5.4', '0.5.5', '0.5.6', '0.5.7', '0.5.8', '0.5.9', '0.5.10'].includes(body.ui_version), ui_version: body.ui_version ?? null });
+    panelNavigator.observe(session.id, { document_id: id, navigation: ['0.3.4', '0.3.5', '0.3.6', '0.3.7', '0.4.0', '0.4.1', '0.5.0', '0.5.1', '0.5.2', '0.5.3', '0.5.4', '0.5.5', '0.5.6', '0.5.7', '0.5.8', '0.5.9', '0.5.10', '0.5.11', '0.5.12', '0.5.13'].includes(body.ui_version), ui_version: body.ui_version ?? null });
     return c.json({ session: session.id, ...data, documents: documents.list() });
   }
   const nativeCanvas = nativeCanvases.get(body.session);
@@ -226,7 +229,7 @@ app.all('/mcp', async (c) => {
 });
 app.get('*', serveStatic({ root: resolve(root, 'dist') }));
 const http = serve({ fetch: app.fetch, hostname: '127.0.0.1', port });
-const wss = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024 });
+const wss = new WebSocketServer({ noServer: true, maxPayload: WIRE_MAX_BYTES });
 http.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, origin);
   if (url.pathname !== '/bridge' || !allowedOrigins.has(req.headers.origin) || url.searchParams.get('token') !== bridgeToken) { socket.destroy(); return; }

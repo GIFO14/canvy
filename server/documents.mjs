@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, open, rename } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { DOCUMENT_MAX_BYTES } from '../src/limits.js';
 
 // The catalogue and checkpoints live outside the plugin cache. Updating the
 // plugin cannot replace a user's documents. The original file stays in place.
@@ -79,10 +80,13 @@ export async function createDocumentStore(runtime) {
     }),
     save: (id, state, fig) => serialized(async () => {
       document(id);
-      if (typeof state !== 'string' || typeof fig !== 'string' || JSON.parse(state).version !== 1) throw new Error('Invalid document');
+      if (typeof state !== 'string' || typeof fig !== 'string') throw new Error('Invalid document');
+      if (Buffer.byteLength(state) > DOCUMENT_MAX_BYTES || fig.length > Math.ceil(DOCUMENT_MAX_BYTES / 3) * 4) throw new Error('Document exceeds the 256 MiB checkpoint and backup limit');
+      const checkpoint = JSON.parse(state);
+      if (checkpoint.version !== 1) throw new Error('Invalid document');
       const data = Buffer.from(fig, 'base64');
-      if (!data.length || data.length + Buffer.byteLength(state) > 32 * 1024 * 1024) throw new Error('Invalid document size');
-      const nodes = JSON.parse(state).graph?.nodes?.value;
+      if (!data.length || data.length + Buffer.byteLength(state) > DOCUMENT_MAX_BYTES) throw new Error('Document exceeds the 256 MiB checkpoint and backup limit');
+      const nodes = checkpoint.graph?.nodes?.value;
       if (!Array.isArray(nodes) || nodes.some(entry => !Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string' || !entry[1]?.type)) throw new Error('Invalid document graph');
       await atomicWrite(path(id, 'fig'), data);
       await atomicWrite(path(id, 'freecanvas'), state);

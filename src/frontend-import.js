@@ -1,3 +1,4 @@
+import { REVERSIBLE_MAX_NODES } from './limits.js';
 import { createSVGNodes } from '@open-pencil/core/io';
 import { fontManager } from '@open-pencil/core/text';
 import { weightToStyle } from '@open-pencil/scene-graph';
@@ -28,7 +29,7 @@ export async function importFrontend(editor, figma, packet, position = {}) {
     return result;
   };
   packet = { ...packet, variants: packet.variants.map(variant => ({ ...variant, assets: variant.assets.map(resolveResource), nodes: variant.nodes.map(node => ({ ...resolveResource(node), ...(node.raster ? { raster: resolveResource(node.raster) } : {}) })) })) };
-  if (editor.graph.nodes.size + packet.variants.reduce((n, v) => n + v.nodes.length, 0) > 10000) throw new Error('Import exceeds reversible document node limit');
+  if (editor.graph.nodes.size + packet.variants.reduce((n, v) => n + v.nodes.length, 0) > REVERSIBLE_MAX_NODES) throw new Error('Import exceeds reversible document node limit');
   const graph = editor.graph;
   const resources = graph.canvyResources ??= { fonts: {}, imports: {} };
   const import_id = crypto.randomUUID(), report = [...packet.issues], families = new Map();
@@ -135,7 +136,7 @@ export async function importFrontend(editor, figma, packet, position = {}) {
     frames.push({ id: frame.id, viewport: variant.viewport, node_map: mapping, issues, visual_layers: variant.nodes.filter(n => n.raster).map(n => ({ id: mapping[n.key], mode: n.raster.mode, reason: n.raster.reason, css: n.css })) });
     x += variant.width + 80;
   }
-  if (graph.nodes.size + graph.variables.size > 10000) throw new Error('Converted SVGs exceed reversible document node limit');
+  if (graph.nodes.size + graph.variables.size > REVERSIBLE_MAX_NODES) throw new Error('Converted SVGs exceed reversible document node limit');
   const assets = [...new Map(packet.variants.flatMap(v => v.assets).filter(a => a.kind === 'image').map(a => [a.url, a])).values()];
   resources.imports[import_id] = { name: packet.name, html: packet.html, originals, assets, frames, issues: report, capture_stats: packet.capture_stats, createdAt: new Date().toISOString() };
   editor.select(frames.map(f => f.id)); editor.zoomToFit(); editor.requestRender();

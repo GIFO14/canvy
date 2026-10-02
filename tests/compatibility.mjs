@@ -7,6 +7,7 @@ import { writeFile, readFile } from 'node:fs/promises';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { COMPATIBILITY_TOOLS } from '../server/tool-compatibility.mjs';
 import { nativeHarness } from './native-harness.mjs';
+import { waitForService } from './service-ready.mjs';
 
 const allocator = createServer(); allocator.listen(0, '127.0.0.1'); await once(allocator, 'listening');
 const port = allocator.address().port; await new Promise(r => allocator.close(r));
@@ -23,10 +24,7 @@ async function call(name, args = {}) {
   return result.structuredContent ?? JSON.parse(result.content.find(c => c.type === 'text').text);
 }
 try {
-  for (let n = 0; n < 80; n++) {
-    if (await fetch(origin + '/health').then(r => r.ok, () => false)) break;
-    await new Promise(r => setTimeout(r, 100));
-  }
+  await waitForService(origin, process);
   await client.connect(new StreamableHTTPClientTransport(new URL(origin + '/mcp')));
   const { tools } = await client.listTools();
   for (const name of COMPATIBILITY_TOOLS) {

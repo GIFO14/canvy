@@ -11,6 +11,7 @@ import { createDocumentStore } from '../server/documents.mjs';
 import { compileFrontend } from '../server/frontend-import.mjs';
 import { encodeDocument, decodeDocument } from '../src/document-state.js';
 import { nativeHarness } from './native-harness.mjs';
+import { waitForService } from './service-ready.mjs';
 
 // Synthetic public fixture: no user's design, checkpoint or screenshot is used.
 await mkdir('.runtime', { recursive: true });
@@ -47,7 +48,7 @@ async function call(name, args = {}) {
   return result.structuredContent ?? JSON.parse(result.content.find(c => c.type === 'text').text);
 }
 try {
-  for (let n = 0; n < 100; n++) { if (await fetch(origin + '/health').then(r => r.ok, () => false)) break; await new Promise(r => setTimeout(r, 50)); }
+  await waitForService(origin, service);
   await client.connect(new StreamableHTTPClientTransport(new URL(origin + '/mcp')));
   host = await nativeHarness(client, origin, { width: 1400, height: 900 }, { nonceCsp: true });
   const panel = await host.addPanel(document.id), canvas = panel.surface.getByTestId('design-canvas');

@@ -43,9 +43,11 @@ export function createPanelNavigator(native) {
         job.resolve({ ...acknowledgement.result, panel_id: panel.panel_id, switched: true });
       }
     }
+    // Library callers consume result.control only. Sending a navigation in
+    // that reply loses it permanently; only the regular poll can execute it.
     // Regular edits already queued in the backend must finish before navigation.
     const job = [...jobs.values()].find(j => j.panel_id === args.session && !j.sent);
-    if (job && !result.requests?.length && panel.ready && !panel.switching) {
+    if (!control && job && !result.requests?.length && panel.ready && !panel.switching) {
       job.sent = true;
       result.requests = [{ id: job.id, command: 'freecanvas_navigate', args: { document_id: job.document_id } }];
     }
@@ -75,7 +77,9 @@ export function createPanelNavigator(native) {
     const id = '$freecanvas/navigation/' + randomUUID();
     return new Promise((resolve, reject) => {
       const job = { id, panel_id: panel.panel_id, document_id: args.document_id ?? null, sent: false, resolve, reject };
-      job.timer = setTimeout(() => rejectJob(job, 'Canvas navigation timed out. Check canvas_status before retrying'), 20000);
+      // Switching large checkpoints includes bounded download and graph loading.
+      // Keep the same deadline as edits, without replaying a timed-out switch.
+      job.timer = setTimeout(() => rejectJob(job, 'Canvas navigation timed out. Check canvas_status before retrying'), 120000);
       jobs.set(id, job);
     });
   }

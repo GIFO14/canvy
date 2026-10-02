@@ -1,3 +1,5 @@
+import { REVERSIBLE_MAX_NODES } from './limits.js';
+import { annotations, annotationContext, resetAnnotationFocus } from './annotation-state.js';
 import { createEditor, createDefaultEditorState, executeAtomicTool } from '@open-pencil/core/editor';
 import { SceneGraph, captureGraphCheckpoint } from '@open-pencil/scene-graph';
 import { FigmaAPI } from '@open-pencil/core/figma-api';
@@ -31,6 +33,7 @@ let lastSaveError = '';
 let lastSavedState, lastSaveResult, retryTimer, saveScheduled = false;
 export const status = reactive({ ready: false, connected: false, savedAt: null, revision: 0, saving: false, dirty: false, saveError: '', openError: '', document: null, documents: [], trash: [], trashSupported: false, home: false, switching: false });
 function loadDocument(bootstrap) {
+  resetAnnotationFocus();
   closePreview();
   editor.replaceGraph(bootstrap.state ? decodeDocument(bootstrap.state) : new SceneGraph());
   restoreImportFonts(editor.graph);
@@ -182,6 +185,7 @@ export function contextPacket() {
     document_id: status.document?.id ?? null, document_name: status.document?.name ?? null, page_id: editor.state.currentPageId, revision: status.revision,
     panel_id: window.__FREECANVAS_NATIVE_HOST__?.bootstrap.session ?? null,
     selectedIds: [...editor.state.selectedIds],
+    ...(!status.home ? annotationContext(editor.graph, editor.state.currentPageId) : {}),
     selection: [...editor.state.selectedIds].slice(0, 20).map((id) => {
       const n = editor.graph.getNode(id);
       return n && { id: n.id, name: n.name, type: n.type, x: n.x, y: n.y, width: n.width, height: n.height, text: n.text?.slice(0, 1000), children: n.childIds.slice(0, 40) };
@@ -205,8 +209,11 @@ function snapshot() {
   const pageId = editor.state.currentPageId;
   const selection = new Set(editor.state.selectedIds);
   return () => {
+    const annotations = structuredClone(editor.graph.canvyResources?.annotations);
     checkpoint.restore();
     editor.graph.canvyResources = structuredClone(resources);
+    // Design undo must not erase feedback added after an import/structural edit.
+    if (annotations) { editor.graph.canvyResources ??= {}; editor.graph.canvyResources.annotations = annotations; }
     if (editor.graph.getNode(pageId)) editor.switchPage(pageId);
     editor.select([...selection].filter((id) => editor.graph.getNode(id)));
     editor.requestRender(); scheduleSave();
@@ -224,9 +231,19 @@ export async function runRPC({ command, args = {} }) {
   if (status.home || status.switching) throw new Error('Choose a canvas from Home before editing');
   if (args.document_id && args.document_id !== status.document.id) throw new Error('Unknown document');
   if (args.page_id && editor.graph.getNode(args.page_id)?.type !== 'CANVAS') throw new Error('Unknown page');
-  if (command === 'freecanvas_status') return { ...status, ...contextPacket(), ui_release: '0.5.10', saveError: lastSaveError, nodes: editor.graph.nodes.size };
+  if (command === 'freecanvas_status') return { ...status, ...contextPacket(), ui_release: '0.5.13', saveError: lastSaveError, nodes: editor.graph.nodes.size };
   if (command === 'freecanvas_context') return contextPacket();
   if (command === 'freecanvas_save') return saveDocument();
+  if (command === 'canvy_set_annotation') {
+    const note = editor.graph.canvyResources?.annotations?.find(a => a.id === args.annotation_id && !a.removed);
+    if (!note) throw new Error('Unknown annotation in this canvas');
+    if (typeof args.text !== 'string' || args.text.length > 4000) throw new Error('Annotation text must be at most 4000 characters');
+    if (args.expected_updated_at !== undefined && args.expected_updated_at !== (note.updated_at ?? note.created_at)) throw new Error('Annotation changed since it was read. Inspect the current feedback before editing.');
+    note.text = args.text; note.updated_at = new Date().toISOString();
+    annotations.revision++; status.revision++; status.dirty = true;
+    await saveDocument();
+    return { document_id: status.document.id, annotation: structuredClone(note), saved: true };
+  }
   if (command === 'canvy_get_import_report') {
     const imports = editor.graph.canvyResources?.imports ?? {};
     const entry = imports[args.import_id];
@@ -271,7 +288,7 @@ export async function runRPC({ command, args = {} }) {
   let result;
   if (isAtomicTool(def)) result = executeAtomicTool(editor, figma, def, args.args ?? {}, { label: 'Codex' });
   else if (def.mutates && def.execution.mutation === 'document') {
-    if (editor.graph.nodes.size + editor.graph.variables.size > 10000) throw new Error('Document too large for reversible agent editing');
+    if (editor.graph.nodes.size + editor.graph.variables.size > REVERSIBLE_MAX_NODES) throw new Error('Document too large for reversible agent editing');
     const before = snapshot();
     try {
       result = await def.execute(figma, args.args ?? {});

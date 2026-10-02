@@ -18,7 +18,7 @@ editor.reorderInAutoLayout = (id, parentId, index) => { if (!isBoardFrame(id)) o
 let settleTimer;
 const surface = useCanvas(canvas, editor, { preserveDrawingBuffer: true, showRulers: false,
   getRenderState: () => {
-    if (editor.renderer) editor.renderer.canvyRetainedFullScene = interaction.mode === 'interact' && !status.home && !status.switching && !preview.current;
+    if (editor.renderer) editor.renderer.canvyRetainedFullScene = interaction.mode !== 'visual' && !status.home && !status.switching && !preview.current;
     return editor.state;
   },
   onPresented: () => {
@@ -49,7 +49,7 @@ function releaseSpace() {
   previousTool = undefined;
 }
 function keydown(event) {
-  if (interaction.mode === 'interact' && !event.target?.closest?.('input,textarea,[contenteditable]') && ['Delete', 'Backspace'].includes(event.code)) {
+  if (interaction.mode !== 'visual' && !event.target?.closest?.('input,textarea,[contenteditable]') && ['Delete', 'Backspace'].includes(event.code)) {
     event.preventDefault(); event.stopImmediatePropagation(); return;
   }
   if (event.code !== 'Space' || !available() || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;

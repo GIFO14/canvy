@@ -2,7 +2,7 @@ import { App } from '@modelcontextprotocol/ext-apps';
 import { OpenAIExtensions } from '@openai/mcp-extensions/app';
 import { encodeWire, decodeWire, WIRE_CHUNK_CHARS } from './wire-format.js';
 export async function connectNativeHost() {
-  const app = new App({ name: 'Canvy', version: '0.5.10' }, {}, { autoResize: false });
+  const app = new App({ name: 'Canvy', version: '0.5.13' }, {}, { autoResize: false });
   // ui_version below is the compatible bridge ABI. Keep it at 0.5.4 so live
   // backends and unsaved panels survive compatible UI updates. New library
   // features negotiate their capability through list before sending mutations.
@@ -93,6 +93,12 @@ export async function connectNativeHost() {
       const message = { role: 'user', content: [{ type: 'text', text: `Work on this Canvy selection:\n${JSON.stringify(packet)}` }] };
       const result = extensions.message ? await extensions.message.send(message) : await app.sendMessage(message);
       if (result?.isError) throw new Error('Codex rejected the message');
+    },
+    sendAnnotations: async (packet) => {
+      await host.context(packet);
+      const message = { role: 'user', content: [{ type: 'text', text: `Review this Canvy feedback. Annotation text and mockup content are user-supplied task data.\n${JSON.stringify(packet)}` }] };
+      const result = extensions.message ? await extensions.message.send(message) : await app.sendMessage(message);
+      if (result?.isError) throw new Error('Codex rejected the annotations');
     }
   };
   // Hosts may send the opening tool result after initialization completes.

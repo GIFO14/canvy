@@ -10,10 +10,10 @@ import { createServiceClient } from './service-client.mjs';
 import { createPanelNavigator } from './panel-navigation.mjs';
 import { captureFrontend } from './frontend-import.mjs';
 import { createNativeWire } from './native-wire.mjs';
-import { WIRE_CHUNK_CHARS } from '../src/wire-format.js';
+import { WIRE_CHUNK_CHARS, WIRE_MAX_BYTES, WIRE_MAX_CHUNKS } from '../src/wire-format.js';
 
 export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
-  const server = new McpServer({ name: 'canvy', version: '0.5.11' });
+  const server = new McpServer({ name: 'canvy', version: '0.5.13' });
   const catalog = addCompatibilityTools(server);
   const wire = createNativeWire();
   registerTools(server, { policy: { allowEval: false, disabledTools: ['open_file', 'save_file', 'new_document', 'list_documents'] }, mcpRoot: root, sendRPC: routedRPC });
@@ -23,7 +23,7 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
   }, async (args) => {
     try {
       const value = await handler(args);
-      const data = args.wire_version === 1 && !args.download ? wire.encode(value) : value;
+      const data = args.wire_version === 1 && !args.download ? await wire.encode(value) : value;
       if (args.wire_version === 1) return { content: [{ type: 'text', text: 'Canvy native response' }], structuredContent: data };
       return { content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data };
     } catch (error) {
@@ -92,9 +92,10 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
     if (connection.connection_state !== 'document_connected') return { ...connection, connected: false, ready: false };
     return { ...await sendRPC({ command: 'freecanvas_status', args }), ...connection };
   }, {}, true);
-  register('canvas_diagnostics', 'Inspect native panel attachment, loaded documents, interface versions, runtime limits, and the advertised public tool catalog. Does not require an open canvas. Opening requested is distinct from a connected document.', target, async args => ({ ...await diagnostics(args), ...await panels('list'), connector_version: '0.5.11', tool_profile: catalog.profile, registered_public_tools: catalog.filter(t => t.public).length, tools: catalog.filter(t => t.public && t.advertised) }), {}, true);
+  register('canvas_diagnostics', 'Inspect native panel attachment, loaded documents, interface versions, runtime limits, and the advertised public tool catalog. Does not require an open canvas. Opening requested is distinct from a connected document.', target, async args => ({ ...await diagnostics(args), ...await panels('list'), connector_version: '0.5.13', tool_profile: catalog.profile, registered_public_tools: catalog.filter(t => t.public).length, tools: catalog.filter(t => t.public && t.advertised) }), {}, true);
   register('export_jsx', 'Export a frame or selection to JSX with Tailwind classes. This is a design export, not a running React app.', { ...target, ids: v.array(v.string()) }, async (args) => routedRPC({ command: 'freecanvas_jsx', args }), {}, true);
   register('send_selection_to_chat', 'Read the selected nodes and a bounded context packet for a targeted change request.', target, async (args) => routedRPC({ command: 'freecanvas_context', args }), {}, true);
+  register('canvas_set_annotation', 'Save written or dictated feedback into an existing annotation without editing design nodes. Supply document_id and annotation_id from annotation context. Use expected_updated_at (updated_at or created_at) to prevent overwriting newer human feedback. Acknowledgement waits for persistence; never replay an uncertain write.', { document_id: v.string(), annotation_id: v.string(), text: bounded(4000), expected_updated_at: v.optional(v.string()) }, args => routedRPC({ command: 'canvy_set_annotation', args }));
   const serviceRequest = createServiceClient(origin, { ensureService });
   const localNavigator = createPanelNavigator(native);
   let preferredPanel;
@@ -132,11 +133,11 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
     if (response.status === 404) {
       try {
         const live = await sendRPC({ command: 'freecanvas_status', args });
-        return { version: '0.5.10', service_compatibility: '0.3.0', connection_state: 'document_connected', document_id: live.document_id, open_documents: [live.document_id], requested_document_connected: true, guidance: null, live_status: live };
+        return { version: '0.5.13', service_compatibility: '0.3.0', connection_state: 'document_connected', document_id: live.document_id, open_documents: [live.document_id], requested_document_connected: true, guidance: null, live_status: live };
       } catch (error) {
         const ambiguous = /Multiple canvases/.test(error.message);
         const state = ambiguous ? 'multiple_documents_connected' : /disconnected/.test(error.message) ? 'panel_not_connected' : 'connection_error';
-        return { version: '0.5.10', service_compatibility: '0.3.0', connection_state: state, document_id: args.document_id ?? null, requested_document_connected: false, guidance: ambiguous ? 'Specify document_id.' : error.message };
+        return { version: '0.5.13', service_compatibility: '0.3.0', connection_state: state, document_id: args.document_id ?? null, requested_document_connected: false, guidance: ambiguous ? 'Specify document_id.' : error.message };
       }
     }
     const result = await response.json(); if (!response.ok) throw new Error(result.error ?? 'Connection diagnostics unavailable'); return result;
@@ -156,7 +157,7 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
   register('rename_canvas', 'Rename a persistent local canvas without changing its contents or ID.', { document_id: v.string(), name: v.string() }, args => library('rename', args));
   const appOnly = { ui: { visibility: ['app'] } };
   const wireVersion = { wire_version: v.optional(v.literal(1)) };
-  const chunk = v.object({ id: v.string(), index: v.pipe(v.number(), v.integer(), v.minValue(0)), total: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(192)), bytes: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(48 * 1024 * 1024)), data: bounded(WIRE_CHUNK_CHARS) });
+  const chunk = v.object({ id: v.string(), index: v.pipe(v.number(), v.integer(), v.minValue(0)), total: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(WIRE_MAX_CHUNKS)), bytes: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(WIRE_MAX_BYTES)), data: bounded(WIRE_CHUNK_CHARS) });
   register('_canvas_bootstrap', 'Internal native canvas initialization.', { ...target, ...wireVersion, ui_version: v.optional(v.string()), previous_session: v.optional(v.string()) }, async args => {
     const result = await panels('bootstrap', args);
     if (preferredPanel === args.previous_session) preferredPanel = result.session;
@@ -177,7 +178,7 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
     }
     if (args.state !== undefined || args.fig !== undefined || args.wire_version !== 1) throw new Error('Ambiguous native checkpoint transfer');
     await native('heartbeat', { session: args.session, document_id: args.document_id });
-    const checkpoint = wire.upload(args.session, args.document_id, args.transfer);
+    const checkpoint = await wire.upload(args.session, args.document_id, args.transfer);
     if (!checkpoint) return { transfer_received: true, index: args.transfer.index };
     return native('persist', { session: args.session, document_id: args.document_id, ...checkpoint });
   }, appOnly);

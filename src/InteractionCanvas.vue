@@ -5,8 +5,8 @@ import { interaction } from './interaction-mode.js';
 import { preview } from './prototype-preview.js';
 import InlinePrototype from './InlinePrototype.vue';
 const root = ref(null), version = ref(0), width = ref(0), height = ref(0);
-const active = computed(() => interaction.mode === 'interact' && !status.home && !status.switching && !preview.current);
-const disabled = computed(() => interaction.spacePan || editor.state.activeTool === 'HAND' || !active.value);
+const active = computed(() => interaction.mode !== 'visual' && !status.home && !status.switching && !preview.current);
+const disabled = computed(() => interaction.mode === 'annotate' || interaction.spacePan || editor.state.activeTool === 'HAND' || !active.value);
 // Frame geometry changes with the document, not with the camera. Keep stable
 // objects so panning doesn't rerender every child or parse prototype HTML again.
 const candidates = computed(() => {
