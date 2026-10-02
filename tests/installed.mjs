@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
-import { Client } from '@modelcontextprotocol/client';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { CORE_TOOLS } from '../server/tool-compatibility.mjs';
 const { version } = JSON.parse(await readFile('package.json'));
@@ -17,7 +17,7 @@ try {
   const tools = await client.listTools();
   const open = tools.tools.find((t) => t.name === 'open_canvas');
   assert.deepEqual(open._meta['openai/ui'].entrypoints, [{ type: 'thread' }, { type: 'global' }]);
-  assert.equal(open._meta.ui.resourceUri, 'ui://canvy/canvas/v6');
+  assert.equal(open._meta.ui.resourceUri, 'ui://canvy/canvas/v5');
   const result = await client.callTool({ name: 'open_canvas', arguments: {} });
   assert.equal(result.structuredContent.presentation, 'native-plugin-canvas');
   assert.ok(!('url' in result.structuredContent));
@@ -33,7 +33,17 @@ try {
   const closed = await client.callTool({ name: 'canvas_status', arguments: { document_id: 'unopened-installed-qa' } });
   assert.ok(!closed.isError); assert.equal(closed.structuredContent.connected, false); assert.equal(closed.structuredContent.ready, false);
   const health = await (await fetch(`http://127.0.0.1:${config.env?.CANVY_PORT ?? 4318}/health`)).json();
-  assert.ok(['0.3.0', '0.3.1', '0.3.2', '0.3.3', '0.3.4', '0.3.5', '0.3.6', '0.3.7', '0.4.0', '0.4.1', '0.5.0', '0.5.1', '0.5.2', '0.5.3', '0.5.4', version].includes(health.version), 'Reuse the compatible running service without interrupting its panels');
+  assert.ok(['0.3.0', '0.3.1', '0.3.2', '0.3.3', '0.3.4', '0.3.5', '0.3.6', '0.3.7', '0.4.0', '0.4.1', '0.5.0', '0.5.1', '0.5.2', '0.5.3', '0.5.4', '0.5.5', version].includes(health.version), 'Reuse the compatible running service without interrupting its panels');
+  // Actual retained backend resource routing is separate from fresh stdio
+  // discovery: the desktop can use this older provider for an existing chat.
+  const retained = new Client({ name: 'retained-resource-read-only-test', version });
+  try {
+    const origin = `http://127.0.0.1:${config.env?.CANVY_PORT ?? 4318}`;
+    await retained.connect(new StreamableHTTPClientTransport(new URL(origin + '/mcp')));
+    const routed = await retained.readResource({ uri: open._meta.ui.resourceUri });
+    assert.equal(routed.contents[0].text, resource.contents[0].text, 'The new entrypoint must load through the retained provider');
+    assert.equal((await (await fetch(origin + '/health')).json()).pid, health.pid, 'Resource reads must not restart the live backend');
+  } finally { await retained.close(); }
   for (const name of ['canvas_render', 'canvas_set_text', 'canvas_set_fill', 'canvas_set_font', 'canvas_undo', 'canvas_diagnostics']) assert.ok(tools.tools.some(t => t.name === name), `Missing essential compatibility tool ${name}`);
   await writeFile('artifacts/installed-test.json', JSON.stringify({ status: 'PASS', version, installed, tools: tools.tools.length, aliases: 33, publicTools: diagnostics.structuredContent.tools.length, registeredPublicTools: 161, toolProfile: 'core', diagnosticsWithoutPanel: true, resourceUri: open._meta.ui.resourceUri, nativeHost: 'Launcher and resource verified; no desktop pointer test claim' }, null, 2));
   console.log('PASS installed stdio launcher, on-demand service, native entrypoints and UI resource');

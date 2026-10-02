@@ -82,7 +82,7 @@ onMounted(async () => {
 onUnmounted(() => { disconnect?.(); stops.forEach((stop) => stop()); clearTimeout(noticeTimer); window.removeEventListener('keydown', keydown); });
 </script>
 <template>
-  <main class="canvas-shell" aria-label="Canvy" data-ui-release="0.5.5" :data-mode="interaction.mode" :data-connected="connected" :data-ready="ready" :data-save-error="Boolean(status.saveError)" :data-saved="Boolean(status.savedAt) && !status.dirty && !status.saving">
+  <main class="canvas-shell" aria-label="Canvy" data-ui-release="0.5.6" :data-mode="interaction.mode" :data-connected="connected" :data-ready="ready" :data-save-error="Boolean(status.saveError)" :data-saved="Boolean(status.savedAt) && !status.dirty && !status.saving">
     <Canvas v-if="booted" :inert="status.home || status.switching || Boolean(preview.current)" @ready="ready = true" />
     <InteractionCanvas v-if="booted" />
     <PrototypePreview v-if="preview.current" :key="preview.current.import_id + ':' + preview.current.width" />
