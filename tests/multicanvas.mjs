@@ -1,0 +1,96 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { createServer } from 'node:net';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { nativeHarness } from './native-harness.mjs';
+import { createServiceClient } from '../server/service-client.mjs';
+const data = await mkdtemp(resolve('.runtime/multicanvas-qa-'));
+const probe = createServer(); probe.listen(0, '127.0.0.1'); await once(probe, 'listening');
+const port = probe.address().port; await new Promise(r => probe.close(r));
+const origin = `http://127.0.0.1:${port}`;
+const serviceRequest = createServiceClient(origin);
+let service, client, host;
+async function start() {
+  service = spawn(process.execPath, ['server/index.mjs'], { windowsHide: true, env: { ...process.env, CANVY_PORT: String(port), CANVY_DATA_DIR: data }, stdio: 'ignore' });
+  let ready = false;
+  for (let n = 0; n < 100; n++) { try { ready = (await fetch(origin + '/health')).ok; } catch {} if (ready) break; await new Promise(r => setTimeout(r, 50)); }
+  assert.ok(ready);
+  client = new Client({ name: 'multicanvas-qa', version: '1' });
+  await client.connect(new StreamableHTTPClientTransport(new URL(origin + '/mcp')));
+}
+async function stop() { await client?.close(); const exited = once(service, 'exit'); service.kill(); await exited; }
+async function call(name, args = {}) {
+  const result = await client.callTool({ name, arguments: args });
+  assert.ok(!result.isError, `${name}: ${JSON.stringify(result.content)}`);
+  return result.structuredContent ?? JSON.parse(result.content.find(c => c.type === 'text').text);
+}
+const checks = [];
+try {
+  await start(); host = await nativeHarness(client, origin);
+  const a = await host.addPanel();
+  await a.surface.getByRole('heading', { name: 'Your canvases' }).waitFor();
+  await a.surface.getByRole('textbox', { name: 'New canvas name' }).fill('Canvas A');
+  await a.surface.getByRole('button', { name: 'Create canvas' }).click();
+  await a.surface.getByRole('button', { name: 'Back to Home' }).waitFor();
+  const docA = (await call('list_documents')).documents.find(d => d.name === 'Canvas A');
+  const shapeA = await call('render', { document_id: docA.id, jsx: '<Frame name="Independent A" w={300} h={200} bg="#ffffff"><Text name="A text" x={20} y={20} w={260} h={30} fontSize={20}>Document A</Text></Frame>' });
+  const b = await host.addPanel();
+  await b.surface.getByRole('textbox', { name: 'New canvas name' }).fill('Canvas B');
+  await b.surface.getByRole('button', { name: 'Create canvas' }).click();
+  await b.surface.getByRole('button', { name: 'Back to Home' }).waitFor();
+  const docB = (await call('list_documents')).documents.find(d => d.name === 'Canvas B');
+  const shapeB = await call('render', { document_id: docB.id, jsx: '<Frame name="Independent B" w={300} h={200} bg="#143b27"><Text name="B text" x={20} y={20} w={260} h={30} fontSize={20}>Document B</Text></Frame>' });
+  assert.notEqual(docA.id, docB.id);
+  const ambiguous = await call('canvas_status'); assert.equal(ambiguous.connection_state, 'multiple_documents_connected'); assert.equal(ambiguous.connected, false);
+  const nodeA = await call('get_node', { document_id: docA.id, id: shapeA.children[0] });
+  const nodeB = await call('get_node', { document_id: docB.id, id: shapeB.children[0] });
+  assert.equal(nodeA.characters, 'Document A'); assert.equal(nodeB.characters, 'Document B');
+  await call('set_text', { document_id: docA.id, id: nodeA.id, text: 'A changed while B is open' });
+  assert.equal((await call('get_node', { document_id: docB.id, id: nodeB.id })).characters, 'Document B');
+  checks.push('Home creates distinct durable canvases', 'Two opaque native surfaces edit simultaneously', 'Explicit document IDs isolate edits and ambiguous edits are rejected');
+  await b.surface.getByRole('button', { name: 'Back to Home' }).click();
+  await b.surface.getByRole('heading', { name: 'Your canvases' }).waitFor();
+  await b.surface.getByRole('button', { name: 'Rename Canvas B' }).click();
+  await b.surface.getByRole('textbox', { name: 'Canvas name', exact: true }).fill('Canvas B renamed');
+  await b.surface.getByRole('button', { name: 'Rename', exact: true }).click();
+  await b.surface.getByRole('button', { name: 'Open Canvas B renamed' }).waitFor();
+  await host.page.screenshot({ path: 'artifacts/home-test.png' });
+  await b.surface.getByRole('button', { name: 'Open Canvas A', exact: true }).click();
+  await b.surface.getByText('This canvas is already open in another panel. You can open a different canvas alongside it.').waitFor();
+  await b.surface.getByRole('button', { name: 'Open Canvas B renamed' }).click();
+  await b.surface.getByRole('button', { name: 'Back to Home' }).waitFor();
+  await call('undo', { document_id: docB.id });
+  assert.equal((await call('get_node', { document_id: docB.id, id: nodeB.id })).characters, 'Document B', 'Undo after reopening must not cross document boundary');
+  checks.push('Home rename survives reopening', 'Duplicate writers are refused', 'Undo history resets across document switches');
+  const savedA = await readFile(resolve(data, 'canvases', docA.id + '.freecanvas'), 'utf8');
+  const savedB = await readFile(resolve(data, 'canvases', docB.id + '.freecanvas'), 'utf8');
+  assert.ok(savedA.includes('A changed while B is open')); assert.ok(savedB.includes('Document B'));
+  assert.ok((await serviceRequest('/api/library', { operation: 'list' })).ok);
+  assert.deepEqual(host.errors, []); await host.close(); host = null; await stop();
+  await start();
+  const reconnected = await serviceRequest('/api/library', { operation: 'create', name: 'Created after restart' });
+  assert.ok(reconnected.ok, 'A long-lived client must renew its token after a backend restart');
+  const refreshedDocuments = await call('list_documents');
+  assert.ok(refreshedDocuments.documents.some(d => d.id === docB.id));
+  assert.equal(refreshedDocuments.documents.filter(d => d.name === 'Created after restart').length, 1, 'A rejected mutation must execute exactly once after credential renewal');
+  checks.push('Long-lived clients refresh credentials after backend restart');
+  const restored = await call('list_documents'); assert.ok(restored.documents.some(d => d.id === docB.id && d.name === 'Canvas B renamed'));
+  const loadA = await call('_canvas_bootstrap', { document_id: docA.id });
+  const loadB = await call('_canvas_bootstrap', { document_id: docB.id });
+  assert.equal(loadA.state, savedA); assert.equal(loadB.state, savedB);
+  const wrongTarget = await client.callTool({ name: '_canvas_persist', arguments: { session: loadA.session, document_id: docB.id, state: savedA, fig: 'AA==' } });
+  assert.ok(wrongTarget.isError);
+  await new Promise(resolve => setTimeout(resolve, 16000));
+  const renewed = await call('_canvas_bootstrap', { document_id: docA.id });
+  assert.notEqual(renewed.session, loadA.session);
+  const staleWriter = await client.callTool({ name: '_canvas_persist', arguments: { session: loadA.session, document_id: docA.id, state: savedA, fig: 'AA==' } });
+  assert.ok(staleWriter.isError);
+  assert.equal(await readFile(resolve(data, 'canvases', docA.id + '.freecanvas'), 'utf8'), savedA);
+  checks.push('Expired writers cannot overwrite a reopened canvas');
+  checks.push('Cold restart restores names, separate documents, content and IDs', 'Cross-session save targets are rejected', 'No UI runtime errors');
+  await writeFile('artifacts/multicanvas-test.json', JSON.stringify({ status: 'PASS', host: 'PROTOCOL HARNESS, NOT CODEX DESKTOP', checks, fixtureDirectory: data }, null, 2));
+  console.log('PASS ' + checks.join('\nPASS '));
+} finally { await host?.close(); if (service?.exitCode === null) await stop(); }

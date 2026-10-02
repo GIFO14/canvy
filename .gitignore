@@ -1,0 +1,31 @@
+node_modules/
+dist/
+dist-native/
+upstream/
+.runtime/
+test-results/
+# Local installation manifests contain machine-specific paths.
+.local/
+.agents/
+plugins/canvy/mcp.json
+plugins/canvy/.mcp.json
+# Private canvases, exports, research and test evidence are never published.
+artifacts/
+exports/
+integration-audit-20261002.md
+design-qa.md
+scripts/reservation-*.mjs
+scripts/verify-live-replica.mjs
+scripts/basic-demo.mjs
+scripts/probe.mjs
+tests/integration.mjs
+tests/host-bridge.mjs
+tests/persistence-restart.mjs
+*.freecanvas
+*.fig
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db

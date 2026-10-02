@@ -1,0 +1,9 @@
+{
+  "name": "canvy",
+  "version": "0.4.1",
+  "description": "Edit local OpenPencil designs on a shared canvas from Codex.",
+  "author": { "name": "Martí" },
+  "skills": "./skills",
+  "mcpServers": "./.mcp.json",
+  "interface": { "displayName": "Canvy", "shortDescription": "Local design canvas powered by OpenPencil", "category": "Creativity", "defaultPrompt": ["Open Canvy and create a design", "Modify the selected element in Canvy"] }
+}
