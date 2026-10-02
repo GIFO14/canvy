@@ -27,6 +27,7 @@
     "@open-pencil/vue": "0.15.1",
     "@phosphor-icons/vue": "^2.2.1",
     "@tailwindcss/postcss": "4.3.3",
+    "esbuild": "^0.28.2",
     "hono": "^4.13.2",
     "playwright": "1.62.1",
     "postcss": "8.5.28",
@@ -35,13 +36,12 @@
     "tailwindcss": "4.3.3",
     "valibot": "^1.4.2",
     "vue": "^3.5.41",
-    "ws": "^8.21.3",
-    "esbuild": "^0.28.2"
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@modelcontextprotocol/ext-apps": "^1.7.5",
     "@openai/mcp-extensions": "^0.1.0",
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "1.62.1",
     "@vitejs/plugin-vue": "^6.0.8",
     "vite": "8.1.4",
     "vite-plugin-singlefile": "^2.3.3"
