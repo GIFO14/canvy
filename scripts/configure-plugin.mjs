@@ -4,10 +4,13 @@ import { fileURLToPath } from 'node:url';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const marketplaceRoot = resolve(root, '.local');
-export async function configurePlugin() {
+export async function configurePlugin({ marketplaceDirectory = marketplaceRoot, environment = process.env } = {}) {
   const { version } = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
   const source = resolve(root, 'plugins/canvy');
-  const destination = resolve(marketplaceRoot, 'plugins/canvy');
+  const destination = resolve(marketplaceDirectory, 'plugins/canvy');
+  let previousEnvironment = {};
+  try { previousEnvironment = JSON.parse(await readFile(resolve(destination, '.mcp.json'), 'utf8')).mcpServers?.canvy?.env ?? {}; } catch { /* First installation has no previous configuration. */ }
+  const browserChannel = environment.CANVY_BROWSER_CHANNEL ?? previousEnvironment.CANVY_BROWSER_CHANNEL;
   await mkdir(resolve(destination, '.codex-plugin'), { recursive: true });
   await cp(resolve(source, 'skills'), resolve(destination, 'skills'), { recursive: true });
   for (const file of ['plugin.json', '.codex-plugin/plugin.json']) {
@@ -19,21 +22,21 @@ export async function configurePlugin() {
         // Change the host's MCP configuration identity when upgrading. A new
         // plugin version must not keep an old process with the same launch args.
         CANVY_CONNECTOR_VERSION: version,
-        CANVY_PORT: process.env.CANVY_PORT ?? process.env.FREECANVAS_PORT ?? '4318',
-        CANVY_DATA_DIR: resolve(process.env.CANVY_DATA_DIR ?? process.env.FREECANVAS_DATA_DIR ?? resolve(root, '.runtime')).replaceAll('\\', '/'),
-        CANVY_TOOL_PROFILE: process.env.CANVY_TOOL_PROFILE ?? process.env.FREECANVAS_TOOL_PROFILE ?? 'core',
-        ...(process.env.CANVY_BROWSER_CHANNEL ? { CANVY_BROWSER_CHANNEL: process.env.CANVY_BROWSER_CHANNEL } : {})
+        CANVY_PORT: environment.CANVY_PORT ?? environment.FREECANVAS_PORT ?? '4318',
+        CANVY_DATA_DIR: resolve(environment.CANVY_DATA_DIR ?? environment.FREECANVAS_DATA_DIR ?? resolve(root, '.runtime')).replaceAll('\\', '/'),
+        CANVY_TOOL_PROFILE: environment.CANVY_TOOL_PROFILE ?? environment.FREECANVAS_TOOL_PROFILE ?? 'core',
+        ...(browserChannel ? { CANVY_BROWSER_CHANNEL: browserChannel } : {})
       }
     }
   } };
   for (const file of ['mcp.json', '.mcp.json']) await writeFile(resolve(destination, file), JSON.stringify(config, null, 2) + '\n');
-  await mkdir(resolve(marketplaceRoot, '.agents/plugins'), { recursive: true });
-  await writeFile(resolve(marketplaceRoot, '.agents/plugins/marketplace.json'), JSON.stringify({
+  await mkdir(resolve(marketplaceDirectory, '.agents/plugins'), { recursive: true });
+  await writeFile(resolve(marketplaceDirectory, '.agents/plugins/marketplace.json'), JSON.stringify({
     name: 'canvy-local', interface: { displayName: 'Canvy Local' },
     plugins: [{ name: 'canvy', source: { source: 'local', path: './plugins/canvy' },
       policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' }, category: 'Creativity' }]
   }, null, 2) + '\n');
-  return { marketplaceRoot, plugin: destination, version };
+  return { marketplaceRoot: marketplaceDirectory, plugin: destination, version };
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   console.log(JSON.stringify(await configurePlugin(), null, 2));

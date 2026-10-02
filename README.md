@@ -85,7 +85,7 @@ $env:CANVY_DATA_DIR = Join-Path $HOME 'CanvyDocuments'
 npm run install:codex
 ```
 
-Keep Node on the desktop app's `PATH`. If moving the checkout, rerun configuration and installation from its new location. Preserve the data directory during updates or uninstalling. Compatible live backends are retained to avoid interrupting panels, so diagnostics may report a newer connector than backend.
+Keep Node on the desktop app's `PATH`. If moving the checkout, rerun configuration and installation from its new location. Preserve the data directory during updates or uninstalling. The chosen browser channel survives reconfiguration; explicitly set `CANVY_BROWSER_CHANNEL` to change it, or set it to an empty string to return to Playwright Chromium. Compatible live backends are retained to avoid interrupting panels, so diagnostics may report a newer connector than backend.
 
 On Windows, reinstalling the same plugin version can fail with a cache backup or access-denied error while Codex holds its installed files open. Quit the desktop app and other sessions using that plugin, then rerun the installer from an external terminal. Do not delete the data directory: documents are separate from the plugin cache.
 
