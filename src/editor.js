@@ -29,7 +29,7 @@ let token;
 let saveQueue = Promise.resolve();
 let lastSaveError = '';
 let lastSavedState, lastSaveResult, retryTimer, saveScheduled = false;
-export const status = reactive({ ready: false, connected: false, savedAt: null, revision: 0, saving: false, dirty: false, saveError: '', openError: '', document: null, documents: [], home: false, switching: false });
+export const status = reactive({ ready: false, connected: false, savedAt: null, revision: 0, saving: false, dirty: false, saveError: '', openError: '', document: null, documents: [], trash: [], trashSupported: false, home: false, switching: false });
 function loadDocument(bootstrap) {
   closePreview();
   editor.replaceGraph(bootstrap.state ? decodeDocument(bootstrap.state) : new SceneGraph());
@@ -81,7 +81,23 @@ export async function initialize() {
 export async function refreshDocuments() {
   const host = window.__FREECANVAS_NATIVE_HOST__;
   const data = host ? await host.library('list') : await (await fetch('/api/library', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ operation: 'list' }) })).json();
-  status.documents = data.documents; return data.documents;
+  status.documents = data.documents; status.trash = data.trash ?? [];
+  status.trashSupported = Boolean(data.capabilities?.trash);
+  return data.documents;
+}
+export async function trashDocument(document_id, operation) {
+  if (!status.home || !['delete', 'restore'].includes(operation)) throw new Error('Return to Home to manage canvases');
+  if (!status.trashSupported) throw new Error('Trash needs the updated local service. Close Canvy panels and restart the local service, then reopen Canvy. Your saved canvases stay on disk.');
+  try {
+    const result = await window.__FREECANVAS_NATIVE_HOST__.library(operation, { document_id });
+    if (result.document?.id !== document_id || Boolean(result.document.deletedAt) !== (operation === 'delete')) {
+      throw new Error('Canvas change was not acknowledged. Check Home and Trash before trying again.');
+    }
+  }
+  finally {
+    // Refresh after an uncertain result, but never replay a deletion or restore.
+    await refreshDocuments();
+  }
 }
 export async function createDocument(name) {
   const host = window.__FREECANVAS_NATIVE_HOST__;
@@ -208,7 +224,7 @@ export async function runRPC({ command, args = {} }) {
   if (status.home || status.switching) throw new Error('Choose a canvas from Home before editing');
   if (args.document_id && args.document_id !== status.document.id) throw new Error('Unknown document');
   if (args.page_id && editor.graph.getNode(args.page_id)?.type !== 'CANVAS') throw new Error('Unknown page');
-  if (command === 'freecanvas_status') return { ...status, ...contextPacket(), ui_release: '0.5.6', saveError: lastSaveError, nodes: editor.graph.nodes.size };
+  if (command === 'freecanvas_status') return { ...status, ...contextPacket(), ui_release: '0.5.8', saveError: lastSaveError, nodes: editor.graph.nodes.size };
   if (command === 'freecanvas_context') return contextPacket();
   if (command === 'freecanvas_save') return saveDocument();
   if (command === 'canvy_get_import_report') {

@@ -13,7 +13,7 @@ import { createNativeWire } from './native-wire.mjs';
 import { WIRE_CHUNK_CHARS } from '../src/wire-format.js';
 
 export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
-  const server = new McpServer({ name: 'canvy', version: '0.5.6' });
+  const server = new McpServer({ name: 'canvy', version: '0.5.8' });
   const catalog = addCompatibilityTools(server);
   const wire = createNativeWire();
   registerTools(server, { policy: { allowEval: false, disabledTools: ['open_file', 'save_file', 'new_document', 'list_documents'] }, mcpRoot: root, sendRPC: routedRPC });
@@ -92,7 +92,7 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
     if (connection.connection_state !== 'document_connected') return { ...connection, connected: false, ready: false };
     return { ...await sendRPC({ command: 'freecanvas_status', args }), ...connection };
   }, {}, true);
-  register('canvas_diagnostics', 'Inspect native panel attachment, loaded documents, interface versions, runtime limits, and the advertised public tool catalog. Does not require an open canvas. Opening requested is distinct from a connected document.', target, async args => ({ ...await diagnostics(args), ...await panels('list'), connector_version: '0.5.6', tool_profile: catalog.profile, registered_public_tools: catalog.filter(t => t.public).length, tools: catalog.filter(t => t.public && t.advertised) }), {}, true);
+  register('canvas_diagnostics', 'Inspect native panel attachment, loaded documents, interface versions, runtime limits, and the advertised public tool catalog. Does not require an open canvas. Opening requested is distinct from a connected document.', target, async args => ({ ...await diagnostics(args), ...await panels('list'), connector_version: '0.5.8', tool_profile: catalog.profile, registered_public_tools: catalog.filter(t => t.public).length, tools: catalog.filter(t => t.public && t.advertised) }), {}, true);
   register('export_jsx', 'Export a frame or selection to JSX with Tailwind classes. This is a design export, not a running React app.', { ...target, ids: v.array(v.string()) }, async (args) => routedRPC({ command: 'freecanvas_jsx', args }), {}, true);
   register('send_selection_to_chat', 'Read the selected nodes and a bounded context packet for a targeted change request.', target, async (args) => routedRPC({ command: 'freecanvas_context', args }), {}, true);
   const serviceRequest = createServiceClient(origin, { ensureService });
@@ -132,11 +132,11 @@ export function createMcp(sendRPC, origin, root, { ensureService } = {}) {
     if (response.status === 404) {
       try {
         const live = await sendRPC({ command: 'freecanvas_status', args });
-        return { version: '0.5.6', service_compatibility: '0.3.0', connection_state: 'document_connected', document_id: live.document_id, open_documents: [live.document_id], requested_document_connected: true, guidance: null, live_status: live };
+        return { version: '0.5.8', service_compatibility: '0.3.0', connection_state: 'document_connected', document_id: live.document_id, open_documents: [live.document_id], requested_document_connected: true, guidance: null, live_status: live };
       } catch (error) {
         const ambiguous = /Multiple canvases/.test(error.message);
         const state = ambiguous ? 'multiple_documents_connected' : /disconnected/.test(error.message) ? 'panel_not_connected' : 'connection_error';
-        return { version: '0.5.6', service_compatibility: '0.3.0', connection_state: state, document_id: args.document_id ?? null, requested_document_connected: false, guidance: ambiguous ? 'Specify document_id.' : error.message };
+        return { version: '0.5.8', service_compatibility: '0.3.0', connection_state: state, document_id: args.document_id ?? null, requested_document_connected: false, guidance: ambiguous ? 'Specify document_id.' : error.message };
       }
     }
     const result = await response.json(); if (!response.ok) throw new Error(result.error ?? 'Connection diagnostics unavailable'); return result;

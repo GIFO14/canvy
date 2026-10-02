@@ -23,9 +23,10 @@ export async function createDocumentStore(runtime) {
   if (catalogue.version !== 1 || !Array.isArray(catalogue.documents)) throw new Error('Invalid canvas catalogue');
   let queue = Promise.resolve();
   function serialized(action) { const job = queue.catch(() => {}).then(action); queue = job; return job; }
-  function document(id) {
+  function document(id, includeDeleted = false) {
     const item = catalogue.documents.find(d => d.id === id);
     if (!item || !/^(freecanvas|[a-f0-9-]{36})$/.test(id)) throw new Error('Unknown canvas');
+    if (item.deletedAt && !includeDeleted) throw new Error('This canvas is in Trash. Restore it from Home before opening or editing it.');
     return item;
   }
   function path(id, extension) {
@@ -45,7 +46,24 @@ export async function createDocumentStore(runtime) {
   }
   return {
     read,
-    list: () => catalogue.documents.map(d => ({ ...d })).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    isActive: id => catalogue.documents.some(d => d.id === id && !d.deletedAt),
+    list: () => catalogue.documents.filter(d => !d.deletedAt).map(d => ({ ...d })).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    trash: () => catalogue.documents.filter(d => d.deletedAt).map(d => ({ ...d })).sort((a, b) => b.deletedAt.localeCompare(a.deletedAt)),
+    delete: (id, validate = () => {}) => serialized(async () => {
+      document(id); validate();
+      const next = { ...catalogue, documents: catalogue.documents.map(d => d.id === id ? { ...d, deletedAt: new Date().toISOString() } : d) };
+      await atomicWrite(indexPath, JSON.stringify(next)); catalogue = next;
+      return { ...document(id, true) };
+    }),
+    restore: id => serialized(async () => {
+      if (!document(id, true).deletedAt) throw new Error('This canvas is not in Trash');
+      const next = { ...catalogue, documents: catalogue.documents.map(d => {
+        if (d.id !== id) return d;
+        const { deletedAt, ...restored } = d; return restored;
+      }) };
+      await atomicWrite(indexPath, JSON.stringify(next)); catalogue = next;
+      return { ...document(id) };
+    }),
     create: value => serialized(async () => {
       const now = new Date().toISOString();
       const item = { id: randomUUID(), name: name(value), createdAt: now, updatedAt: now };

@@ -18,7 +18,7 @@ Canvy is an independent MIT-licensed integration built on [OpenPencil](https://g
 | Responsive variants | Capture up to four viewport sizes; actual browser media queries and Tailwind breakpoints determine each layout. |
 | Original assets | Persist captured SVG markup, image bytes, font bytes, prototype and conversion report with the document. |
 | Interaction mode | Default **Interact** mode runs imported React mockups directly on the canvas; click menus, tabs and modals. |
-| Multiple canvases | Home lists, creates and renames saved documents. Different documents can be open in separate panels. |
+| Multiple canvases | Home lists, creates, renames and deletes saved documents, with a recoverable Trash. Different documents can be open in separate panels. |
 | Automatic persistence | Agent edit acknowledgements wait for local persistence. No Save button. |
 | Visual edits | Switch to **Visual edits** to select, drag and edit native elements. Hold **Space + left-button drag** to pan in either mode. |
 | Agent continuation | Explicit document targets can navigate an existing panel after a human changes canvases. |
@@ -36,6 +36,14 @@ Choose **Visual edits** in the compact top-left control to work with native node
 Hold **Space + left-button drag** to move around the canvas in either mode, including when a React mockup has focus. Spaces inside text fields remain ordinary input. The Pan tool also moves the canvas; release it with the mode control. **V** selects Visual edits; **H** selects Pan when the editor has focus.
 
 Changing modes preserves an onscreen prototype's transient state. Offscreen frames are unloaded to avoid running every prototype on a large board; returning to them, switching documents or reopening a panel resets that state. Original code and resources persist locally, while open menus and form values are not design edits or saved application data. Native content edits remain separate from the original React source: return to Interact to test that source, or reimport revised React to update its behavior. Frame movement and dimensions determine where and at what viewport size the prototype appears.
+
+## Delete and restore canvases
+
+On Home, use the trash icon beside a canvas name and confirm **Delete canvas**. The canvas moves to **Trash**; choose **Restore** there to return it to Home. IDs, names, resources, `.freecanvas` checkpoints and `.fig` backups are retained. Trash survives closing Codex and restarting the local service. There is no permanent-delete or automatic-purge action.
+
+A canvas open in another native panel or the development browser cannot be deleted: return that panel to Home or close it first. Home refreshes its catalogue periodically so changes in another panel become visible. Trashed canvases cannot be opened, renamed or saved until restored. A failed or timed-out deletion is not replayed; the UI refreshes the catalogue to show the current result.
+
+Trash requires a **0.5.7 or newer backend**, as well as the updated UI. Compatible older services are retained during installation to protect active panels; when upgrading an existing installation, finish edits, close its Canvy panels and restart the local backend before reopening the updated plugin. The UI detects missing Trash support and reports it rather than applying a partial deletion. Do not run an older backend against a catalogue containing trashed canvases: older versions do not understand the optional `deletedAt` field.
 
 ## Install in Codex
 
@@ -97,7 +105,7 @@ npm run install:codex
 
 Keep Node on the desktop app's `PATH`. If moving the checkout, rerun configuration and installation from its new location. Preserve the data directory during updates or uninstalling. The chosen browser channel survives reconfiguration; explicitly set `CANVY_BROWSER_CHANNEL` to change it, or set it to an empty string to return to Playwright Chromium. Compatible live backends are retained to avoid interrupting panels, so diagnostics may report a newer connector than backend.
 
-`canvas_status.ui_release` reports the actual loaded UI release. Panel `ui_version` reports the compatible bridge ABI; releases 0.5.5 and 0.5.6 retain ABI 0.5.4 to work with a live older backend. The canonical resource address stays at `ui://canvy/canvas/v5`: Codex can route a fresh entrypoint through an older per-chat connector. Compatible UI updates replace the bundled contents without changing that address. The briefly advertised v6 address remains an alias for previously mounted 0.5.5 panels.
+`canvas_status.ui_release` reports the actual loaded UI release. Panel `ui_version` reports the compatible bridge ABI; releases 0.5.5 through 0.5.8 retain ABI 0.5.4 to work with a live older backend. The health endpoint also retains `version: "0.5.4"` as its service ABI identity so retained launchers recognize a compatible running backend. Its `release` field and diagnostics report the actual backend release; library capability negotiation determines Trash support. The canonical resource address stays at `ui://canvy/canvas/v5`: Codex can route a fresh entrypoint through an older per-chat connector. Compatible UI updates replace the bundled contents without changing that address. The briefly advertised v6 address remains an alias for previously mounted 0.5.5 panels.
 
 On Windows, reinstalling the same plugin version can fail with a cache backup or access-denied error while Codex holds its installed files open. Quit the desktop app and other sessions using that plugin, then rerun the installer from an external terminal. Do not delete the data directory: documents are separate from the plugin cache.
 
@@ -243,7 +251,7 @@ npm test
 
 On Linux, use `npx playwright install --with-deps chromium` if browser system libraries are missing. To use an installed Edge or Chrome, set `CANVY_BROWSER_CHANNEL=msedge` or `chrome`. Default tests use Playwright Chromium and isolated ports/data; they do not edit your saved canvases.
 
-`npm test` runs retained-resource routing, native-transfer, compatibility, multicanvas, native navigation, backend recovery, Space-drag, interaction-mode and React-import suites sequentially. They exercise the actual bundled resource inside an **opaque MCP Apps protocol harness**. Native-transfer tests preserve a large high-entropy checkpoint through small bridge messages and a save longer than its connection lease. Interaction tests click an inline React menu, type form spaces, pan from a focused prototype, switch to native dragging with autosave, and verify that Interact blocks native Delete/Undo. React tests verify responsive geometry, original assets, editable vectors/text, undo, checkpoint reload and modal/form interactions. A passing harness test does not prove a desktop pointer interaction in Codex.
+`npm test` runs retained-resource routing, native-transfer, compatibility, multicanvas, recoverable deletion, native navigation, backend recovery, Space-drag, interaction-mode and React-import suites sequentially. They exercise the actual bundled resource inside an **opaque MCP Apps protocol harness**. Native-transfer tests preserve a large high-entropy checkpoint through small bridge messages and a save longer than its connection lease. Interaction tests click an inline React menu, type form spaces, pan from a focused prototype, switch to native dragging with autosave, and verify that Interact blocks native Delete/Undo. React tests verify responsive geometry, original assets, editable vectors/text, undo, checkpoint reload and modal/form interactions. A passing harness test does not prove a desktop pointer interaction in Codex.
 
 After installing, `npm run test:installed` verifies stdio configuration, native metadata, discovery, a fresh Codex app-server catalog and a read-only resource request through the actual retained backend. It uses your installed plugin/backend. Real Codex rendering has been exercised during development; every new host adapter still needs its own integration check.
 

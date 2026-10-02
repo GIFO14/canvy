@@ -30,6 +30,33 @@ let browser = null;
 const nativeCanvases = new Map();
 const liveNative = () => [...nativeCanvases.values()].filter(s => Date.now() - s.seen < 15000);
 const pending = new Map();
+// Mark deletions before any async work so a simultaneous open cannot acquire
+// a writer between the guard and the catalogue commit.
+const deleting = new Set();
+function assertOpenable(id) {
+  if (deleting.has(id) || !documents.isActive(id)) throw new Error('This canvas is in Trash or is being deleted. Restore it from Home before opening it.');
+}
+async function library(body) {
+  if (body.operation === 'list') return { documents: documents.list(), trash: documents.trash(), capabilities: { trash: true } };
+  if (body.operation === 'create') return { document: await documents.create(body.name) };
+  if (body.operation === 'rename') return { document: await documents.rename(body.document_id, body.name) };
+  if (body.operation === 'restore') return { document: await documents.restore(body.document_id) };
+  if (body.operation === 'delete') {
+    const id = body.document_id;
+    if (deleting.has(id)) throw new Error('This canvas is already being deleted');
+    deleting.add(id);
+    try {
+      const validate = () => {
+        const writers = [...nativeCanvases.values()].filter(s => s.document_id === id);
+        if (id === 'freecanvas' && browser?.readyState === 1 || writers.some(s => Date.now() - s.seen < 15000 || s.requests.some(r => pending.has(r.id)) || [...pending.values()].some(p => p.session === s.id))) {
+          throw new Error('This canvas is open in another panel. Return that panel to Home or close it before deleting.');
+        }
+      };
+      return { document: await documents.delete(id, validate) };
+    } finally { deleting.delete(id); }
+  }
+  throw new Error('Unknown library operation');
+}
 export async function sendRPC(body) {
   const target = body.args?.document_id;
   const surfaces = liveNative().filter(s => s.document_id && (!target || s.document_id === target));
@@ -56,7 +83,9 @@ app.use('*', async (c, next) => {
   c.header('X-Content-Type-Options', 'nosniff');
   await next();
 });
-app.get('/health', (c) => c.json({ name: 'canvy', version: '0.5.6', pid: process.pid, connected: browser?.readyState === 1 || liveNative().length > 0, url: origin }));
+// Retained launchers match this legacy version exactly. Keep the compatible
+// service identity stable; release and feature negotiation carry newer behavior.
+app.get('/health', (c) => c.json({ name: 'canvy', version: '0.5.4', release: '0.5.8', pid: process.pid, connected: browser?.readyState === 1 || liveNative().length > 0, url: origin }));
 app.post('/api/diagnostics', async c => {
   if (c.req.header('authorization') !== `Bearer ${bridgeToken}`) return c.json({ error: 'Unauthorized' }, 401);
   const { document_id } = await c.req.json();
@@ -65,10 +94,10 @@ app.post('/api/diagnostics', async c => {
   if (browser?.readyState === 1) open.push('freecanvas');
   const selected = document_id ? open.filter(id => id === document_id) : open;
   const connection_state = selected.length === 1 ? 'document_connected' : selected.length > 1 ? 'multiple_documents_connected' : live.length ? 'home_connected' : 'panel_not_connected';
-  return c.json({ version: '0.5.6', document_id: document_id ?? (selected.length === 1 ? selected[0] : null), connection_state, native_panels: live.length, open_documents: open, requested_document_connected: selected.length === 1, guidance: selected.length === 1 ? null : selected.length > 1 ? 'Specify document_id.' : document_id ? 'Open this document from the native Canvy Home. An opening acknowledgement alone does not attach a panel.' : 'Open and expand the native Canvy panel in Codex.', limits: { save_bytes: 32 * 1024 * 1024, reversible_structure_nodes_and_variables: 10000, rpc_timeout_ms: 30000, import_timeout_ms: 120000, native_panels: 32 } });
+  return c.json({ version: '0.5.8', document_id: document_id ?? (selected.length === 1 ? selected[0] : null), connection_state, native_panels: live.length, open_documents: open, requested_document_connected: selected.length === 1, guidance: selected.length === 1 ? null : selected.length > 1 ? 'Specify document_id.' : document_id ? 'Open this document from the native Canvy Home. An opening acknowledgement alone does not attach a panel.' : 'Open and expand the native Canvy panel in Codex.', limits: { save_bytes: 32 * 1024 * 1024, reversible_structure_nodes_and_variables: 10000, rpc_timeout_ms: 30000, import_timeout_ms: 120000, native_panels: 32 } });
 });
 app.get('/api/bootstrap', async (c) => {
-  return c.json({ token: bridgeToken, ...await documents.read('freecanvas'), documents: documents.list() });
+  return c.json({ token: bridgeToken, ...(documents.isActive('freecanvas') ? await documents.read('freecanvas') : { document: null, state: null, saved: null }), documents: documents.list() });
 });
 app.put('/api/document', async (c) => {
   if (c.req.header('authorization') !== `Bearer ${bridgeToken}`) return c.json({ error: 'Unauthorized' }, 401);
@@ -89,10 +118,7 @@ app.post('/api/library', async c => {
   if (c.req.header('authorization') !== `Bearer ${bridgeToken}`) return c.json({ error: 'Unauthorized' }, 401);
   const body = await c.req.json();
   try {
-    if (body.operation === 'list') return c.json({ documents: documents.list() });
-    if (body.operation === 'create') return c.json({ document: await documents.create(body.name) });
-    if (body.operation === 'rename') return c.json({ document: await documents.rename(body.document_id, body.name) });
-    return c.json({ error: 'Unknown library operation' }, 400);
+    return c.json(await library(body));
   } catch (e) { return c.json({ error: e.message }, 400); }
 });
 app.post('/api/rpc', async (c) => {
@@ -112,6 +138,7 @@ app.post('/api/native', async (c) => {
   if (c.req.header('authorization') !== `Bearer ${bridgeToken}`) return c.json({ error: 'Unauthorized' }, 401);
   const body = await c.req.json();
   function claim(id, except) {
+    assertOpenable(id);
     if (id === 'freecanvas' && browser?.readyState === 1 || liveNative().some(s => s.id !== except && s.document_id === id)) throw new Error('This canvas is already open in another panel. You can open a different canvas alongside it.');
   }
   try {
@@ -123,7 +150,7 @@ app.post('/api/native', async (c) => {
     if (nativeCanvases.size >= 32) throw new Error('Too many canvas panels');
     const session = { id: randomUUID(), seen: Date.now(), requests: [], document_id: id };
     nativeCanvases.set(session.id, session);
-    panelNavigator.observe(session.id, { document_id: id, navigation: ['0.3.4', '0.3.5', '0.3.6', '0.3.7', '0.4.0', '0.4.1', '0.5.0', '0.5.1', '0.5.2', '0.5.3', '0.5.4', '0.5.5', '0.5.6'].includes(body.ui_version), ui_version: body.ui_version ?? null });
+    panelNavigator.observe(session.id, { document_id: id, navigation: ['0.3.4', '0.3.5', '0.3.6', '0.3.7', '0.4.0', '0.4.1', '0.5.0', '0.5.1', '0.5.2', '0.5.3', '0.5.4', '0.5.5', '0.5.6', '0.5.7', '0.5.8'].includes(body.ui_version), ui_version: body.ui_version ?? null });
     return c.json({ session: session.id, ...data, documents: documents.list() });
   }
   const nativeCanvas = nativeCanvases.get(body.session);
@@ -151,10 +178,7 @@ app.post('/api/native', async (c) => {
     if (control) {
       const args = control.result;
       if (args.operation === 'switch') return c.json({ requests: [], control: await switchCanvas(args.document_id ?? null) });
-      if (args.operation === 'list') return c.json({ requests: [], control: { documents: documents.list() } });
-      if (args.operation === 'create') return c.json({ requests: [], control: { document: await documents.create(args.name) } });
-      if (args.operation === 'rename') return c.json({ requests: [], control: { document: await documents.rename(args.document_id, args.name) } });
-      throw new Error('Unknown UI operation');
+      return c.json({ requests: [], control: await library(args) });
     }
     for (const response of body.responses ?? []) {
       const item = pending.get(response.id); if (!item || item.session !== nativeCanvas.id) continue;
@@ -206,7 +230,7 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024 }
 http.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, origin);
   if (url.pathname !== '/bridge' || !allowedOrigins.has(req.headers.origin) || url.searchParams.get('token') !== bridgeToken) { socket.destroy(); return; }
-  if (browser?.readyState === 1 || liveNative().some(s => s.document_id === 'freecanvas')) { socket.write('HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\n'); socket.destroy(); return; }
+  if (!documents.isActive('freecanvas') || deleting.has('freecanvas') || browser?.readyState === 1 || liveNative().some(s => s.document_id === 'freecanvas')) { socket.write('HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\n'); socket.destroy(); return; }
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws));
 });
 wss.on('connection', (ws) => {
