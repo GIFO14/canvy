@@ -1,17 +1,26 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue';
 import { preview, previewHtml, attachPreview, detachPreview, closePreview } from './prototype-preview.js';
-const iframe = ref(null);
+const iframe = ref(null), generation = ref(0), restarting = ref(false);
 const url = URL.createObjectURL(new Blob([previewHtml(preview.current.html)], { type: 'text/html' }));
 const size = computed(() => ({ width: preview.current.width + 'px', height: preview.current.height + 'px' }));
+async function restart() {
+  if (restarting.value) return;
+  restarting.value = true;
+  // Cancel pending preview actions instead of replaying them into a fresh UI.
+  detachPreview(); preview.error = ''; generation.value++;
+  await nextTick();
+  if (iframe.value) attachPreview(iframe.value);
+  restarting.value = false;
+}
 onMounted(() => attachPreview(iframe.value));
 onUnmounted(() => { detachPreview(); URL.revokeObjectURL(url); });
 </script>
 <template>
   <section class="prototype-overlay" role="dialog" aria-label="Interactive prototype">
-    <header><strong>{{ preview.current.name }}</strong><span>{{ preview.current.width }} × {{ preview.current.height }} · Original React prototype</span><button @click="closePreview" aria-label="Close prototype">Close</button></header>
+    <header><strong>{{ preview.current.name }}</strong><span>{{ preview.current.width }} × {{ preview.current.height }} · Original React prototype</span><button @click="restart" :disabled="restarting">Restart mockup</button><button @click="closePreview" aria-label="Close prototype">Close</button></header>
     <p v-if="preview.error" role="status">{{ preview.error }}</p>
-    <div class="prototype-scroll"><iframe ref="iframe" :src="url" sandbox="allow-scripts" referrerpolicy="no-referrer" title="Imported React prototype" :style="size" /></div>
+    <div class="prototype-scroll"><iframe :key="generation" ref="iframe" :src="url" sandbox="allow-scripts" referrerpolicy="no-referrer" title="Imported React prototype" :style="size" /></div>
   </section>
 </template>
 <style scoped>

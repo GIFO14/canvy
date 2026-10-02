@@ -2,7 +2,7 @@ import { App } from '@modelcontextprotocol/ext-apps';
 import { OpenAIExtensions } from '@openai/mcp-extensions/app';
 import { encodeWire, decodeWire, WIRE_CHUNK_CHARS } from './wire-format.js';
 export async function connectNativeHost() {
-  const app = new App({ name: 'Canvy', version: '0.5.9' }, {}, { autoResize: false });
+  const app = new App({ name: 'Canvy', version: '0.5.10' }, {}, { autoResize: false });
   // ui_version below is the compatible bridge ABI. Keep it at 0.5.4 so live
   // backends and unsaved panels survive compatible UI updates. New library
   // features negotiate their capability through list before sending mutations.

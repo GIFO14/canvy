@@ -24,7 +24,7 @@ const candidates = computed(() => {
   }
   return result;
 });
-const worldStyle = computed(() => ({ transform: `translate3d(${editor.state.panX}px, ${editor.state.panY}px, 0) scale(${editor.state.zoom})` }));
+const worldStyle = computed(() => ({ transform: `translate3d(${editor.state.panX}px, ${editor.state.panY}px, 0) scale(${editor.state.zoom})`, '--prototype-ui-scale': 1 / editor.state.zoom }));
 const screens = shallowRef([]);
 let cullFrame;
 function updateScreens() {

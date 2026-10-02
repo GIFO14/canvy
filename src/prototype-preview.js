@@ -44,6 +44,7 @@ function childBridge(canvasNavigation = false) {
     } catch (error) { parent.postMessage({ channel, id: data.id, error: error.message }, '*'); }
   });
   addEventListener('error', event => parent.postMessage({ channel, error: event.message }, '*'));
+  addEventListener('unhandledrejection', event => parent.postMessage({ channel, error: event.reason?.message || String(event.reason ?? 'Unhandled prototype error') }, '*'));
   addEventListener('securitypolicyviolation', event => parent.postMessage({ channel, warning: `Blocked prototype resource: ${event.violatedDirective}` }, '*'));
   addEventListener('load', async () => { await document.fonts.ready; await settle(); parent.postMessage({ channel, ready: true }, '*'); });
 }

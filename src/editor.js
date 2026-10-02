@@ -224,7 +224,7 @@ export async function runRPC({ command, args = {} }) {
   if (status.home || status.switching) throw new Error('Choose a canvas from Home before editing');
   if (args.document_id && args.document_id !== status.document.id) throw new Error('Unknown document');
   if (args.page_id && editor.graph.getNode(args.page_id)?.type !== 'CANVAS') throw new Error('Unknown page');
-  if (command === 'freecanvas_status') return { ...status, ...contextPacket(), ui_release: '0.5.9', saveError: lastSaveError, nodes: editor.graph.nodes.size };
+  if (command === 'freecanvas_status') return { ...status, ...contextPacket(), ui_release: '0.5.10', saveError: lastSaveError, nodes: editor.graph.nodes.size };
   if (command === 'freecanvas_context') return contextPacket();
   if (command === 'freecanvas_save') return saveDocument();
   if (command === 'canvy_get_import_report') {

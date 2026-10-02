@@ -1,13 +1,13 @@
 {
   "name": "canvy",
-  "version": "0.5.9",
+  "version": "0.5.10",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 4317",
     "build": "vite build && vite build --config vite.native.config.js && node scripts/build-host.mjs",
     "start": "node server/index.mjs",
-    "test": "npm run test:configure && npm run test:resource-routing && npm run test:native-wire && npm run test:compatibility && npm run test:multicanvas && npm run test:trash && npm run test:navigation && npm run test:recovery && npm run test:space-pan && npm run test:interaction && npm run test:performance && npm run test:frontend",
+    "test": "npm run test:configure && npm run test:resource-routing && npm run test:native-wire && npm run test:compatibility && npm run test:multicanvas && npm run test:trash && npm run test:navigation && npm run test:recovery && npm run test:space-pan && npm run test:interaction && npm run test:performance && npm run test:restart && npm run test:frontend",
     "test:configure": "node tests/configure.mjs",
     "test:resource-routing": "node tests/resource-routing.mjs",
     "test:native-wire": "node tests/native-wire.mjs",
@@ -20,6 +20,7 @@
     "test:space-pan": "node tests/space-pan.mjs",
     "test:interaction": "node tests/interaction.mjs",
     "test:performance": "node tests/performance.mjs",
+    "test:restart": "node tests/restart.mjs",
     "configure": "node scripts/configure-plugin.mjs",
     "install:codex": "npm run build && node scripts/install-codex.mjs",
     "test:frontend": "node tests/frontend.mjs"
